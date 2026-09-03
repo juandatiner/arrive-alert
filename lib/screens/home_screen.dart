@@ -12,7 +12,18 @@ import 'confirm_trip_screen.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  /// Pre-resolved by SplashScreen while its animation was playing, so this
+  /// screen doesn't need its own blank loading spinner in the common case.
+  /// Either can be null (still resolve locally) but not both meaningfully
+  /// set at once.
+  final LatLng? initialLatLng;
+  final LocationAccessResult? initialLocationAccessError;
+
+  const HomeScreen({
+    super.key,
+    this.initialLatLng,
+    this.initialLocationAccessError,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -40,7 +51,15 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initLocation();
+    if (widget.initialLatLng != null) {
+      _currentLatLng = widget.initialLatLng;
+      _loadingLocation = false;
+    } else if (widget.initialLocationAccessError != null) {
+      _locationAccessError = widget.initialLocationAccessError;
+      _loadingLocation = false;
+    } else {
+      _initLocation();
+    }
     _loadPlaces();
     _searchFocus.addListener(() {
       if (_searchFocus.hasFocus && _showFavoritesPanel) {

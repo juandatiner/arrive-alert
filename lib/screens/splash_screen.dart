@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
+import '../services/location_service.dart';
 import 'home_screen.dart';
 
 /// A short branded intro (mark pops in, name reveals, brief hold) shown once
@@ -22,6 +24,8 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<Offset> _wordSlide;
 
   bool _showHome = false;
+  LatLng? _resolvedLatLng;
+  LocationAccessResult? _resolvedAccessError;
 
   @override
   void initState() {
@@ -48,9 +52,36 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _controller.forward();
-    Future.delayed(_totalDuration, () {
-      if (mounted) setState(() => _showHome = true);
-    });
+    _prepare();
+  }
+
+  /// Resolves location in parallel with the animation - by the time both
+  /// settle, HomeScreen can skip its own blank loading spinner. Capped so a
+  /// stuck GPS fix can't hold the branded splash open indefinitely; past
+  /// that, HomeScreen just resolves it live like before.
+  Future<void> _prepare() async {
+    await Future.wait([
+      Future.delayed(_totalDuration),
+      _resolveLocation().timeout(const Duration(seconds: 6),
+          onTimeout: () {}),
+    ]);
+    if (mounted) setState(() => _showHome = true);
+  }
+
+  Future<void> _resolveLocation() async {
+    final result = await LocationService.ensurePermissions(background: false);
+    if (result == LocationAccessResult.serviceDisabled ||
+        result == LocationAccessResult.denied ||
+        result == LocationAccessResult.deniedForever) {
+      _resolvedAccessError = result;
+      return;
+    }
+    try {
+      final pos = await LocationService.getCurrentPosition();
+      _resolvedLatLng = LatLng(pos.latitude, pos.longitude);
+    } catch (_) {
+      // Leave both null - HomeScreen falls back to resolving it itself.
+    }
   }
 
   @override
@@ -64,7 +95,11 @@ class _SplashScreenState extends State<SplashScreen>
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 420),
       child: _showHome
-          ? const HomeScreen(key: ValueKey('home'))
+          ? HomeScreen(
+              key: const ValueKey('home'),
+              initialLatLng: _resolvedLatLng,
+              initialLocationAccessError: _resolvedAccessError,
+            )
           : _buildSplash(key: const ValueKey('splash')),
     );
   }
