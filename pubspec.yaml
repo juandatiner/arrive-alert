@@ -66,15 +66,15 @@ flutter_launcher_icons:
   min_sdk_android: 21
   remove_alpha_ios: true
 
+# No `image`/`image_dark` here on purpose: the mark's real reveal is the
+# pop-in animation in lib/screens/splash_screen.dart. Showing it static
+# here too made the native splash flash the icon at full size, then the
+# Dart splash visibly "reset" it back down to animate in again.
 flutter_native_splash:
   color: "#2563E0"
-  image: assets/icon/app_icon_foreground.png
   color_dark: "#17275C"
-  image_dark: assets/icon/app_icon_foreground.png
   android_12:
-    image: assets/icon/app_icon_foreground.png
     icon_background_color: "#2563E0"
-    image_dark: assets/icon/app_icon_foreground.png
     icon_background_color_dark: "#17275C"
 
 # For information on the generic Dart part of this file, see the
@@ -90,6 +90,7 @@ flutter:
 
   assets:
     - assets/sounds/alarm.wav
+    - assets/icon/app_icon_foreground.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
