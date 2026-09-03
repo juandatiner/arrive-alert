@@ -90,7 +90,6 @@ flutter:
 
   assets:
     - assets/sounds/alarm.wav
-    - assets/icon/app_icon_foreground.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
