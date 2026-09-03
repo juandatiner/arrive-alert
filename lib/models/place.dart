@@ -2,8 +2,14 @@ class Place {
   final String name;
   final double lat;
   final double lon;
+  final String? nickname;
 
-  const Place({required this.name, required this.lat, required this.lon});
+  const Place({
+    required this.name,
+    required this.lat,
+    required this.lon,
+    this.nickname,
+  });
 
   factory Place.fromNominatim(Map<String, dynamic> json) {
     return Place(
@@ -18,10 +24,30 @@ class Place {
       name: json['name'] as String,
       lat: (json['lat'] as num).toDouble(),
       lon: (json['lon'] as num).toDouble(),
+      nickname: json['nickname'] as String?,
     );
   }
 
-  Map<String, dynamic> toJson() => {'name': name, 'lat': lat, 'lon': lon};
+  /// Nickname if the user set one, otherwise the address.
+  String get displayLabel =>
+      (nickname != null && nickname!.trim().isNotEmpty) ? nickname! : name;
+
+  Place copyWith({String? name, double? lat, double? lon, String? nickname}) {
+    return Place(
+      name: name ?? this.name,
+      lat: lat ?? this.lat,
+      lon: lon ?? this.lon,
+      nickname: nickname ?? this.nickname,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'lat': lat,
+        'lon': lon,
+        if (nickname != null && nickname!.trim().isNotEmpty)
+          'nickname': nickname,
+      };
 
   /// Same physical spot, tolerant to tiny float differences.
   bool sameSpotAs(Place other) {

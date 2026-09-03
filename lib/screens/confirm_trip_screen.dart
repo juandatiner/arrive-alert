@@ -100,6 +100,34 @@ class _ConfirmTripSheetState extends State<_ConfirmTripSheet> {
     final nowFavorite = await PlacesHistoryService.toggleFavorite(_place);
     if (!mounted) return;
     setState(() => _isFavorite = nowFavorite);
+    if (nowFavorite) await _promptNickname();
+  }
+
+  Future<void> _promptNickname() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Apodo para este lugar (opcional)'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Ej: Casa, Trabajo'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Omitir'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || result.isEmpty || !mounted) return;
+    await PlacesHistoryService.setNickname(_place, result);
   }
 
   Future<void> _confirm() async {
