@@ -17,7 +17,10 @@ class AlertSettings {
     this.vibrationEnabled = true,
   });
 
-  /// Enforces firstMinutes > secondMinutes > alarmMinutes >= 1.
+  /// Enforces alarmMinutes >= 1, and when the second alert is enabled,
+  /// firstMinutes > secondMinutes > alarmMinutes. A *disabled* second alert
+  /// keeps its own stored value clamped above the alarm, but must never
+  /// constrain firstMinutes - a disabled threshold shouldn't limit anything.
   /// The alarm threshold can never be disabled or skipped.
   static AlertSettings normalized({
     required int firstMinutes,
@@ -29,8 +32,15 @@ class AlertSettings {
     required bool vibrationEnabled,
   }) {
     final alarm = alarmMinutes.clamp(1, 90);
-    final second = secondMinutes.clamp(alarm + 1, 90);
-    final first = firstMinutes.clamp(second + 1, 120);
+    final int first;
+    final int second;
+    if (secondEnabled) {
+      second = secondMinutes.clamp(alarm + 1, 90);
+      first = firstMinutes.clamp(second + 1, 120);
+    } else {
+      first = firstMinutes.clamp(alarm + 1, 120);
+      second = secondMinutes.clamp(alarm + 1, 90);
+    }
     return AlertSettings(
       firstMinutes: first,
       firstEnabled: firstEnabled,
