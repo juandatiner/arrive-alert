@@ -90,6 +90,9 @@ flutter:
 
   assets:
     - assets/sounds/alarm.wav
+    - assets/transit/routes_index.json
+    - assets/transit/version.json
+    - assets/transit/routes/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

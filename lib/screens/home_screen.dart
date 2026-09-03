@@ -9,6 +9,8 @@ import '../services/places_history_service.dart';
 import '../widgets/favorite_icon_picker.dart';
 import '../widgets/map_style.dart';
 import 'confirm_trip_screen.dart';
+import 'route_map_screen.dart';
+import 'route_picker_sheet.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -131,6 +133,21 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  Future<void> _pickTransitRoute() async {
+    _searchFocus.unfocus();
+    final result = await showRoutePickerSheet(context);
+    if (result == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteMapScreen(
+          summary: result.summary,
+          initialOriginStop: result.savedTrip?.originIndex,
+          initialDestinationStop: result.savedTrip?.destinationIndex,
+        ),
+      ),
+    );
+  }
+
   void _toggleFavoritesPanel() {
     _searchFocus.unfocus();
     setState(() => _showFavoritesPanel = !_showFavoritesPanel);
@@ -242,6 +259,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             tooltip: 'Favoritos',
             onPressed: _toggleFavoritesPanel,
+          ),
+          IconButton(
+            icon: const Icon(Icons.directions_bus_rounded),
+            tooltip: 'Buscar ruta de bus',
+            onPressed: _pickTransitRoute,
           ),
           IconButton(
             icon: const Icon(Icons.settings),

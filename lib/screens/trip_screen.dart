@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:vibration/vibration.dart';
 import '../models/alert_settings.dart';
 import '../models/route_info.dart';
+import '../models/transit_route.dart';
 import '../services/alarm_player.dart';
 import '../services/alert_service.dart';
 import '../services/location_service.dart';
@@ -13,16 +14,23 @@ import '../services/notification_service.dart';
 import '../services/routing_service.dart';
 import '../services/settings_service.dart';
 import '../utils/format.dart';
+import '../utils/path_geometry.dart';
 import '../widgets/map_style.dart';
 
 class TripScreen extends StatefulWidget {
   final LatLng destination;
   final String destinationLabel;
 
+  /// When set, the trip follows a published transit route instead of a
+  /// routed path: the geometry is fixed and only the remaining distance
+  /// along it is recomputed as the rider moves.
+  final TransitTripPlan? transitPlan;
+
   const TripScreen({
     super.key,
     required this.destination,
     required this.destinationLabel,
+    this.transitPlan,
   });
 
   @override
@@ -50,6 +58,7 @@ class _TripScreenState extends State<TripScreen>
   Timer? _vibrationLoop;
   bool _hasAlwaysPermission = true;
   bool _bannerDismissed = false;
+  RoutePath? _transitPath;
 
   late final AnimationController _pulseController = AnimationController(
     vsync: this,
@@ -76,6 +85,29 @@ class _TripScreenState extends State<TripScreen>
       return;
     }
     _hasAlwaysPermission = result == LocationAccessResult.always;
+
+    final plan = widget.transitPlan;
+    if (plan != null) {
+      _transitPath = RoutePath(plan.path);
+      try {
+        final pos = await LocationService.getCurrentPosition();
+        if (!mounted) return;
+        setState(() {
+          _currentPosition = pos;
+          _loading = false;
+        });
+        _updateTransitProgress(pos);
+      } catch (_) {
+        // No fix yet: show the full leg until the first position arrives.
+        if (!mounted) return;
+        setState(() {
+          _route = _transitRouteInfo(plan.meters);
+          _loading = false;
+        });
+      }
+      _positionSub = LocationService.watchPosition().listen(_handlePosition);
+      return;
+    }
 
     try {
       final pos = await LocationService.getCurrentPosition();
@@ -104,9 +136,40 @@ class _TripScreenState extends State<TripScreen>
     _positionSub = LocationService.watchPosition().listen(_handlePosition);
   }
 
+  /// Remaining leg for a transit trip: snap to the published path and keep
+  /// only what's still ahead of the rider. No router involved.
+  RouteInfo _transitRouteInfo(double remainingMeters, {List<LatLng>? points}) {
+    final plan = widget.transitPlan!;
+    return RouteInfo(
+      points: points ?? plan.path,
+      distanceMeters: remainingMeters,
+      durationSeconds: plan.secondsFor(remainingMeters),
+    );
+  }
+
+  void _updateTransitProgress(Position pos) {
+    final path = _transitPath;
+    if (path == null || path.points.isEmpty) return;
+    final here = LatLng(pos.latitude, pos.longitude);
+    final index = path.nearestIndex(here);
+    final remaining = path.totalMeters - path.metersFromStart(index);
+    final route = _transitRouteInfo(
+      remaining,
+      points: path.points.sublist(index),
+    );
+    if (!mounted) return;
+    setState(() => _route = route);
+    _checkThresholds(route);
+  }
+
   Future<void> _handlePosition(Position pos) async {
     if (!mounted) return;
     setState(() => _currentPosition = pos);
+
+    if (widget.transitPlan != null) {
+      _updateTransitProgress(pos);
+      return;
+    }
 
     final origin = LatLng(pos.latitude, pos.longitude);
     final now = DateTime.now();

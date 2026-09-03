@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/alert_settings.dart';
 import '../services/settings_service.dart';
+import '../services/transit_update_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,6 +16,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   AlertSettings _settings = const AlertSettings();
   bool _loading = true;
   PermissionStatus? _notificationStatus;
+  String? _transitFeedDate;
+  bool _transitOutdated = false;
 
   @override
   void initState() {
@@ -22,6 +25,16 @@ class _SettingsScreenState extends State<SettingsScreen>
     WidgetsBinding.instance.addObserver(this);
     _load();
     _checkNotificationStatus();
+    _checkTransitData();
+  }
+
+  Future<void> _checkTransitData() async {
+    final feed = await TransitUpdateService.bundledFeedDate();
+    if (!mounted) return;
+    setState(() => _transitFeedDate = feed);
+    final outdated = await TransitUpdateService.checkForUpdate();
+    if (!mounted) return;
+    setState(() => _transitOutdated = outdated);
   }
 
   @override
@@ -166,6 +179,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                         _update(_settings.copyWith(vibrationEnabled: v)),
                   ),
                 ]),
+                const SizedBox(height: 28),
+                _sectionHeader('DATOS DE RUTAS'),
+                _groupCard([_buildTransitDataRow()]),
               ],
             ),
     );
@@ -199,6 +215,56 @@ class _SettingsScreenState extends State<SettingsScreen>
             child: Text(
               permanentlyDenied ? 'Ajustes' : 'Activar',
               style: const TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransitDataRow() {
+    final feed = _transitFeedDate;
+    final formatted = feed == null || feed.length != 8
+        ? '...'
+        : '${feed.substring(6)}/${feed.substring(4, 6)}/${feed.substring(0, 4)}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: (_transitOutdated ? Colors.orange : Colors.green)
+                  .withValues(alpha: 0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _transitOutdated
+                  ? Icons.update_rounded
+                  : Icons.check_circle_outline_rounded,
+              size: 17,
+              color: _transitOutdated
+                  ? Colors.orange.shade800
+                  : Colors.green.shade700,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Rutas TransMilenio y SITP',
+                    style: TextStyle(
+                        fontSize: 14.5, fontWeight: FontWeight.w600)),
+                Text(
+                  _transitOutdated
+                      ? 'Datos del $formatted. Hay una version mas nueva publicada; '
+                          'actualiza la app para recibirla.'
+                      : 'Datos del $formatted (fuente: TransMilenio).',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
             ),
           ),
         ],
