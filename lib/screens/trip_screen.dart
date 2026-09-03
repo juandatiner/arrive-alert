@@ -12,6 +12,7 @@ import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/routing_service.dart';
 import '../services/settings_service.dart';
+import '../utils/format.dart';
 import '../widgets/map_style.dart';
 
 class TripScreen extends StatefulWidget {
@@ -604,7 +605,7 @@ class _TripScreenState extends State<TripScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _infoTile('$remainingMinutes min', 'restantes'),
+                  _infoTile(formatDuration(remainingMinutes), 'restantes'),
                   _infoTile('${remainingKm.toStringAsFixed(1)} km', 'distancia'),
                 ],
               ),

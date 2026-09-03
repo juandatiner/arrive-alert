@@ -8,6 +8,7 @@ import '../services/location_service.dart';
 import '../services/places_history_service.dart';
 import '../services/routing_service.dart';
 import '../services/settings_service.dart';
+import '../utils/format.dart';
 import 'settings_screen.dart';
 import 'trip_screen.dart';
 
@@ -290,7 +291,7 @@ class _ConfirmTripSheetState extends State<_ConfirmTripSheet> {
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
               child: Text(
-                '~$minutes min · ${km.toStringAsFixed(1)} km',
+                '~${formatDuration(minutes)} · ${km.toStringAsFixed(1)} km',
                 style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
               ),
             ),
