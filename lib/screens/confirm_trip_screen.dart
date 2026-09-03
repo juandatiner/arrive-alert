@@ -266,11 +266,21 @@ class _ConfirmTripSheetState extends State<_ConfirmTripSheet> {
     final route = _route!;
     final minutes = (route.durationSeconds / 60).ceil();
     final km = route.distanceMeters / 1000;
-    final arrival = DateTime.now().add(
-      Duration(seconds: route.durationSeconds.round()),
-    );
+    final now = DateTime.now();
+    final arrival = now.add(Duration(seconds: route.durationSeconds.round()));
     final arrivalLabel =
         '${arrival.hour.toString().padLeft(2, '0')}:${arrival.minute.toString().padLeft(2, '0')}';
+
+    // Only worth calling out when the arrival actually lands on a different
+    // calendar day than today - a same-day late-night trip doesn't need it.
+    final dayDiff = DateTime(arrival.year, arrival.month, arrival.day)
+        .difference(DateTime(now.year, now.month, now.day))
+        .inDays;
+    final dayNote = dayDiff == 1
+        ? '+1 dia'
+        : dayDiff > 1
+            ? '+$dayDiff dias · ${arrival.day.toString().padLeft(2, '0')}/${arrival.month.toString().padLeft(2, '0')}'
+            : null;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -323,6 +333,18 @@ class _ConfirmTripSheetState extends State<_ConfirmTripSheet> {
             ),
           ],
         ),
+        if (dayNote != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 34, top: 1),
+            child: Text(
+              dayNote,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: scheme.primary,
+              ),
+            ),
+          ),
         const SizedBox(height: 4),
         Row(
           children: [
