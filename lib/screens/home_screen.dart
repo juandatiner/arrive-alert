@@ -10,6 +10,24 @@ import '../widgets/map_style.dart';
 import 'confirm_trip_screen.dart';
 import 'settings_screen.dart';
 
+/// Icon choices for a favorite place, keyed by what gets persisted in
+/// `Place.icon`. Order here is the order shown in the picker.
+const _favoritePlaceIcons = <String, IconData>{
+  'home': Icons.home_rounded,
+  'work': Icons.work_rounded,
+  'school': Icons.school_rounded,
+  'gym': Icons.fitness_center_rounded,
+  'restaurant': Icons.restaurant_rounded,
+  'shopping': Icons.shopping_cart_rounded,
+  'health': Icons.local_hospital_rounded,
+  'transit': Icons.directions_bus_rounded,
+  'heart': Icons.favorite_rounded,
+  'star': Icons.star_rounded,
+};
+
+IconData _iconForPlace(Place place) =>
+    _favoritePlaceIcons[place.icon] ?? Icons.star_rounded;
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -148,9 +166,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _reverseGeocode(LatLng point) async {
     try {
-      final address = await GeocodingService.reverse(point.latitude, point.longitude);
+      final result =
+          await GeocodingService.reverse(point.latitude, point.longitude);
       if (!mounted || _destinationLatLng != point) return;
-      setState(() => _destinationLabel = address);
+      if (result.isWater) {
+        setState(() {
+          _destinationLatLng = null;
+          _destinationLabel = null;
+        });
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(
+            content: Text('Ese punto esta sobre el agua. Elige un lugar en tierra.'),
+          ));
+        return;
+      }
+      setState(() => _destinationLabel = result.label);
     } catch (_) {
       if (!mounted || _destinationLatLng != point) return;
       setState(() => _destinationLabel =
@@ -461,11 +492,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   _sectionLabel('Favoritos'),
                   ..._favorites.map(
                     (p) => _compactRow(
-                      icon: Icons.star_rounded,
+                      icon: _iconForPlace(p),
                       iconColor: Colors.amber.shade600,
                       label: p.displayLabel,
                       onTap: () => _selectPlace(p),
-                      onEdit: () => _editNickname(p),
+                      onEdit: () => _editFavorite(p),
                     ),
                   ),
                 ],
@@ -643,31 +674,96 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _editNickname(Place place) async {
+  Future<void> _editFavorite(Place place) async {
     final controller = TextEditingController(text: place.nickname ?? '');
-    final result = await showDialog<String>(
+    String? selectedIcon = place.icon;
+    bool deleted = false;
+    bool saved = false;
+
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Apodo del lugar'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Ej: Casa, Trabajo'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Editar favorito'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration:
+                    const InputDecoration(hintText: 'Apodo: Casa, Trabajo'),
+              ),
+              const SizedBox(height: 14),
+              const Text('Icono',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _favoritePlaceIcons.entries.map((entry) {
+                  final isSelected = selectedIcon == entry.key;
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => setDialogState(
+                        () => selectedIcon = isSelected ? null : entry.key),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? Colors.amber.withValues(alpha: 0.25)
+                            : Colors.grey.withValues(alpha: 0.08),
+                        border: isSelected
+                            ? Border.all(color: Colors.amber.shade600, width: 1.5)
+                            : null,
+                      ),
+                      child: Icon(entry.value, size: 19),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () {
+                deleted = true;
+                Navigator.of(context).pop();
+              },
+              child: const Text('Eliminar'),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () {
+                saved = true;
+                Navigator.of(context).pop();
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Guardar'),
-          ),
-        ],
       ),
     );
-    if (result == null) return;
-    await PlacesHistoryService.setNickname(place, result);
+
+    if (deleted) {
+      await PlacesHistoryService.removeFavorite(place);
+    } else if (saved) {
+      final nickname = controller.text.trim();
+      if (nickname != (place.nickname ?? '')) {
+        await PlacesHistoryService.setNickname(place, nickname);
+      }
+      if (selectedIcon != place.icon) {
+        await PlacesHistoryService.setIcon(place, selectedIcon);
+      }
+    }
     _loadPlaces();
   }
 

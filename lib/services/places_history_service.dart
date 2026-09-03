@@ -39,12 +39,28 @@ class PlacesHistoryService {
     return !existed;
   }
 
+  static Future<void> removeFavorite(Place place) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = await _loadList(_favoriteKey);
+    list.removeWhere((p) => p.sameSpotAs(place));
+    await _saveList(prefs, _favoriteKey, list);
+  }
+
   static Future<void> setNickname(Place place, String? nickname) async {
     final prefs = await SharedPreferences.getInstance();
     final list = await _loadList(_favoriteKey);
     final index = list.indexWhere((p) => p.sameSpotAs(place));
     if (index == -1) return;
     list[index] = list[index].copyWith(nickname: nickname ?? '');
+    await _saveList(prefs, _favoriteKey, list);
+  }
+
+  static Future<void> setIcon(Place place, String? icon) async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = await _loadList(_favoriteKey);
+    final index = list.indexWhere((p) => p.sameSpotAs(place));
+    if (index == -1) return;
+    list[index] = list[index].copyWith(icon: icon ?? '');
     await _saveList(prefs, _favoriteKey, list);
   }
 

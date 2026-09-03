@@ -4,11 +4,15 @@ class Place {
   final double lon;
   final String? nickname;
 
+  /// Key into [placeIconChoices] - null means the default (star) look.
+  final String? icon;
+
   const Place({
     required this.name,
     required this.lat,
     required this.lon,
     this.nickname,
+    this.icon,
   });
 
   factory Place.fromNominatim(Map<String, dynamic> json) {
@@ -25,6 +29,7 @@ class Place {
       lat: (json['lat'] as num).toDouble(),
       lon: (json['lon'] as num).toDouble(),
       nickname: json['nickname'] as String?,
+      icon: json['icon'] as String?,
     );
   }
 
@@ -32,12 +37,19 @@ class Place {
   String get displayLabel =>
       (nickname != null && nickname!.trim().isNotEmpty) ? nickname! : name;
 
-  Place copyWith({String? name, double? lat, double? lon, String? nickname}) {
+  Place copyWith({
+    String? name,
+    double? lat,
+    double? lon,
+    String? nickname,
+    String? icon,
+  }) {
     return Place(
       name: name ?? this.name,
       lat: lat ?? this.lat,
       lon: lon ?? this.lon,
       nickname: nickname ?? this.nickname,
+      icon: icon ?? this.icon,
     );
   }
 
@@ -47,6 +59,7 @@ class Place {
         'lon': lon,
         if (nickname != null && nickname!.trim().isNotEmpty)
           'nickname': nickname,
+        if (icon != null) 'icon': icon,
       };
 
   /// Same physical spot, tolerant to tiny float differences.
