@@ -9,8 +9,10 @@ import '../models/route_info.dart';
 import '../services/alarm_player.dart';
 import '../services/alert_service.dart';
 import '../services/location_service.dart';
+import '../services/notification_service.dart';
 import '../services/routing_service.dart';
 import '../services/settings_service.dart';
+import '../widgets/map_style.dart';
 
 class TripScreen extends StatefulWidget {
   final LatLng destination;
@@ -42,8 +44,11 @@ class _TripScreenState extends State<TripScreen>
   bool _alarmActive = false;
   bool _arrived = false;
   bool _loading = true;
-  String? _error;
+  LocationAccessResult? _accessError;
+  String? _genericError;
   Timer? _vibrationLoop;
+  bool _hasAlwaysPermission = true;
+  bool _bannerDismissed = false;
 
   late final AnimationController _pulseController = AnimationController(
     vsync: this,
@@ -59,17 +64,17 @@ class _TripScreenState extends State<TripScreen>
   Future<void> _start() async {
     _settings = await SettingsService.load();
 
-    final hasPermission =
-        await LocationService.ensurePermissions(background: true);
-    if (!hasPermission) {
+    final result = await LocationService.ensurePermissions(background: true);
+    if (result == LocationAccessResult.serviceDisabled ||
+        result == LocationAccessResult.denied ||
+        result == LocationAccessResult.deniedForever) {
       setState(() {
         _loading = false;
-        _error =
-            'Necesitamos permiso de ubicacion (idealmente "siempre") para '
-            'avisarte incluso con la pantalla apagada.';
+        _accessError = result;
       });
       return;
     }
+    _hasAlwaysPermission = result == LocationAccessResult.always;
 
     try {
       final pos = await LocationService.getCurrentPosition();
@@ -90,7 +95,7 @@ class _TripScreenState extends State<TripScreen>
     } catch (e) {
       setState(() {
         _loading = false;
-        _error = 'No se pudo calcular la ruta. Revisa tu conexion.';
+        _genericError = 'No se pudo calcular la ruta. Revisa tu conexion.';
       });
       return;
     }
@@ -141,7 +146,6 @@ class _TripScreenState extends State<TripScreen>
       _firstFired = true;
       AlertService.fireThresholdAlert(
         minutesLeft: _settings.firstMinutes,
-        soundEnabled: _settings.soundEnabled,
         vibrationEnabled: _settings.vibrationEnabled,
         destinationLabel: widget.destinationLabel,
       );
@@ -153,7 +157,6 @@ class _TripScreenState extends State<TripScreen>
       _secondFired = true;
       AlertService.fireThresholdAlert(
         minutesLeft: _settings.secondMinutes,
-        soundEnabled: _settings.soundEnabled,
         vibrationEnabled: _settings.vibrationEnabled,
         destinationLabel: widget.destinationLabel,
       );
@@ -166,6 +169,11 @@ class _TripScreenState extends State<TripScreen>
       setState(() => _alarmActive = true);
       if (_settings.soundEnabled) AlarmPlayer.start();
       if (_settings.vibrationEnabled) _startVibrationLoop();
+      AlertService.fireAlarmNotification(
+        destinationLabel: widget.destinationLabel,
+        arrived: arrived,
+        soundEnabled: _settings.soundEnabled,
+      );
     }
     if (arrived && !_arrived) {
       setState(() => _arrived = true);
@@ -186,6 +194,7 @@ class _TripScreenState extends State<TripScreen>
   // the trip closes it.
   Future<void> _stopAlarm() async {
     await AlarmPlayer.stop();
+    await NotificationService.cancelAlarmNotification();
     _vibrationLoop?.cancel();
     _vibrationLoop = null;
     setState(() => _alarmActive = false);
@@ -194,6 +203,7 @@ class _TripScreenState extends State<TripScreen>
   Future<void> _endTrip() async {
     await _positionSub?.cancel();
     await AlarmPlayer.stop();
+    await NotificationService.cancelAlarmNotification();
     _vibrationLoop?.cancel();
     if (mounted) Navigator.of(context).pop();
   }
@@ -259,7 +269,7 @@ class _TripScreenState extends State<TripScreen>
               ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
-            : _error != null
+            : (_accessError != null || _genericError != null)
                 ? _buildError()
                 : _alarmActive
                     ? _buildAlarmOverlay()
@@ -268,7 +278,38 @@ class _TripScreenState extends State<TripScreen>
     );
   }
 
+  String get _errorMessage {
+    if (_genericError != null) return _genericError!;
+    switch (_accessError!) {
+      case LocationAccessResult.serviceDisabled:
+        return 'El GPS esta desactivado. Activalo para poder rastrear el viaje.';
+      case LocationAccessResult.deniedForever:
+        return 'Denegaste el permiso de ubicacion de forma permanente. '
+            'Actívalo en los ajustes de la app (idealmente "siempre") para '
+            'avisarte incluso con la pantalla apagada.';
+      case LocationAccessResult.denied:
+        return 'Necesitamos permiso de ubicacion (idealmente "siempre") para '
+            'avisarte incluso con la pantalla apagada.';
+      case LocationAccessResult.whileInUse:
+      case LocationAccessResult.always:
+        return '';
+    }
+  }
+
+  void _retryStart() {
+    setState(() {
+      _loading = true;
+      _accessError = null;
+      _genericError = null;
+    });
+    _start();
+  }
+
   Widget _buildError() {
+    final needsAppSettings =
+        _accessError == LocationAccessResult.deniedForever;
+    final needsSystemSettings =
+        _accessError == LocationAccessResult.serviceDisabled;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -277,16 +318,28 @@ class _TripScreenState extends State<TripScreen>
           children: [
             const Icon(Icons.error_outline, size: 48),
             const SizedBox(height: 12),
-            Text(_error!, textAlign: TextAlign.center),
+            Text(_errorMessage, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _loading = true;
-                  _error = null;
-                });
-                _start();
-              },
+            if (needsAppSettings)
+              ElevatedButton(
+                onPressed: () async {
+                  await LocationService.openSettings();
+                  _retryStart();
+                },
+                child: const Text('Abrir ajustes de la app'),
+              )
+            else if (needsSystemSettings)
+              ElevatedButton(
+                onPressed: () async {
+                  await LocationService.openLocationSettings();
+                  _retryStart();
+                },
+                child: const Text('Abrir ajustes de ubicacion'),
+              ),
+            if (needsAppSettings || needsSystemSettings)
+              const SizedBox(height: 8),
+            TextButton(
+              onPressed: _retryStart,
               child: const Text('Reintentar'),
             ),
           ],
@@ -449,6 +502,38 @@ class _TripScreenState extends State<TripScreen>
     );
   }
 
+  Widget _buildAlwaysBanner() {
+    return Material(
+      color: Colors.amber.shade100,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.location_disabled, size: 18, color: Colors.black87),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Para recibir avisos con la pantalla apagada, activa '
+                '"Siempre" en Ajustes de ubicacion.',
+                style: TextStyle(fontSize: 12.5, color: Colors.black87),
+              ),
+            ),
+            TextButton(
+              onPressed: () => LocationService.openSettings(),
+              child: const Text('Abrir ajustes', style: TextStyle(fontSize: 12.5)),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 18),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => setState(() => _bannerDismissed = true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTracking() {
     final route = _route!;
     final pos = _currentPosition!;
@@ -458,6 +543,7 @@ class _TripScreenState extends State<TripScreen>
 
     return Column(
       children: [
+        if (!_hasAlwaysPermission && !_bannerDismissed) _buildAlwaysBanner(),
         Expanded(
           child: Stack(
             children: [
@@ -468,11 +554,7 @@ class _TripScreenState extends State<TripScreen>
                   initialZoom: 14,
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.cosmodavid.arrive_alert',
-                  ),
+                  MapTileLayer(),
                   PolylineLayer(
                     polylines: [
                       Polyline(
@@ -500,6 +582,7 @@ class _TripScreenState extends State<TripScreen>
                       ),
                     ],
                   ),
+                  const MapAttribution(),
                 ],
               ),
               Positioned(

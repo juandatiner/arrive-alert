@@ -6,6 +6,7 @@ import '../models/place.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../services/places_history_service.dart';
+import '../widgets/map_style.dart';
 import 'confirm_trip_screen.dart';
 import 'settings_screen.dart';
 
@@ -31,7 +32,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _searching = false;
   bool _loadingLocation = true;
   bool _showFavoritesPanel = false;
-  String? _locationError;
+  LocationAccessResult? _locationAccessError;
+  String? _genericLocationError;
   Timer? _debounce;
 
   @override
@@ -49,11 +51,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _initLocation() async {
-    final ok = await LocationService.ensurePermissions(background: false);
-    if (!ok) {
+    final result = await LocationService.ensurePermissions(background: false);
+    if (result == LocationAccessResult.serviceDisabled ||
+        result == LocationAccessResult.denied ||
+        result == LocationAccessResult.deniedForever) {
       setState(() {
         _loadingLocation = false;
-        _locationError = 'Necesitamos permiso de ubicacion para funcionar.';
+        _locationAccessError = result;
       });
       return;
     }
@@ -62,11 +66,13 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _currentLatLng = LatLng(pos.latitude, pos.longitude);
         _loadingLocation = false;
+        _locationAccessError = null;
       });
     } catch (e) {
       setState(() {
         _loadingLocation = false;
-        _locationError = 'No se pudo obtener tu ubicacion.';
+        _locationAccessError = null;
+        _genericLocationError = 'No se pudo obtener tu ubicacion.';
       });
     }
   }
@@ -106,10 +112,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectPlace(Place place) {
     setState(() {
       _destinationLatLng = LatLng(place.lat, place.lon);
-      _destinationLabel = place.name;
+      _destinationLabel = place.displayLabel;
       _results = [];
       _showFavoritesPanel = false;
-      _searchController.text = place.name;
+      _searchController.text = place.displayLabel;
     });
     _searchFocus.unfocus();
     _mapController.move(_destinationLatLng!, 15);
@@ -132,12 +138,24 @@ class _HomeScreenState extends State<HomeScreen> {
   void _selectOnMap(TapPosition tapPosition, LatLng point) {
     setState(() {
       _destinationLatLng = point;
-      _destinationLabel =
-          'Punto en mapa (${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)})';
+      _destinationLabel = null; // null == loading the address
       _results = [];
       _searchController.clear();
     });
     _searchFocus.unfocus();
+    _reverseGeocode(point);
+  }
+
+  Future<void> _reverseGeocode(LatLng point) async {
+    try {
+      final address = await GeocodingService.reverse(point.latitude, point.longitude);
+      if (!mounted || _destinationLatLng != point) return;
+      setState(() => _destinationLabel = address);
+    } catch (_) {
+      if (!mounted || _destinationLatLng != point) return;
+      setState(() => _destinationLabel =
+          '${point.latitude.toStringAsFixed(4)}, ${point.longitude.toStringAsFixed(4)}');
+    }
   }
 
   Future<void> _recenterOnMe() async {
@@ -176,7 +194,9 @@ class _HomeScreenState extends State<HomeScreen> {
         title: TextField(
           controller: _searchController,
           focusNode: _searchFocus,
-          enabled: !_loadingLocation && _locationError == null,
+          enabled: !_loadingLocation &&
+              _locationAccessError == null &&
+              _genericLocationError == null,
           decoration: InputDecoration(
             hintText: 'Buscar destino (o toca el mapa)',
             filled: true,
@@ -219,13 +239,41 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: _loadingLocation
           ? const Center(child: CircularProgressIndicator())
-          : _locationError != null
+          : (_locationAccessError != null || _genericLocationError != null)
               ? _buildError()
               : _buildMapAndSearch(),
     );
   }
 
+  String get _locationErrorMessage {
+    if (_genericLocationError != null) return _genericLocationError!;
+    switch (_locationAccessError!) {
+      case LocationAccessResult.serviceDisabled:
+        return 'El GPS esta desactivado. Activalo para poder usar la app.';
+      case LocationAccessResult.deniedForever:
+        return 'Denegaste el permiso de ubicacion de forma permanente. '
+            'Actívalo en los ajustes de la app para poder usarla.';
+      case LocationAccessResult.denied:
+        return 'Necesitamos permiso de ubicacion para funcionar.';
+      case LocationAccessResult.whileInUse:
+      case LocationAccessResult.always:
+        return '';
+    }
+  }
+
+  void _retryLocation() {
+    setState(() {
+      _loadingLocation = true;
+      _genericLocationError = null;
+    });
+    _initLocation();
+  }
+
   Widget _buildError() {
+    final needsAppSettings =
+        _locationAccessError == LocationAccessResult.deniedForever;
+    final needsSystemSettings =
+        _locationAccessError == LocationAccessResult.serviceDisabled;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -234,13 +282,28 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Icon(Icons.location_off, size: 48),
             const SizedBox(height: 12),
-            Text(_locationError!, textAlign: TextAlign.center),
+            Text(_locationErrorMessage, textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () {
-                setState(() => _loadingLocation = true);
-                _initLocation();
-              },
+            if (needsAppSettings)
+              ElevatedButton(
+                onPressed: () async {
+                  await LocationService.openSettings();
+                  _retryLocation();
+                },
+                child: const Text('Abrir ajustes de la app'),
+              )
+            else if (needsSystemSettings)
+              ElevatedButton(
+                onPressed: () async {
+                  await LocationService.openLocationSettings();
+                  _retryLocation();
+                },
+                child: const Text('Abrir ajustes de ubicacion'),
+              ),
+            if (needsAppSettings || needsSystemSettings)
+              const SizedBox(height: 8),
+            TextButton(
+              onPressed: _retryLocation,
               child: const Text('Reintentar'),
             ),
           ],
@@ -272,11 +335,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: _selectOnMap,
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.cosmodavid.arrive_alert',
-                  ),
+                  MapTileLayer(),
                   MarkerLayer(
                     markers: [
                       Marker(
@@ -302,6 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                     ],
                   ),
+                  const MapAttribution(),
                 ],
               ),
               Positioned(
@@ -368,7 +428,7 @@ class _HomeScreenState extends State<HomeScreen> {
               (p) => _compactRow(
                 icon: Icons.history,
                 iconColor: Colors.grey,
-                label: p.name,
+                label: p.displayLabel,
                 onTap: () => _selectPlace(p),
               ),
             ),
@@ -403,8 +463,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     (p) => _compactRow(
                       icon: Icons.star_rounded,
                       iconColor: Colors.amber.shade600,
-                      label: p.name,
+                      label: p.displayLabel,
                       onTap: () => _selectPlace(p),
+                      onEdit: () => _editNickname(p),
                     ),
                   ),
                 ],
@@ -445,15 +506,33 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  _destinationLabel ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                child: _destinationLabel == null
+                    ? Row(
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Buscando direccion...',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        _destinationLabel!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
               ),
               SizedBox(
                 width: 32,
@@ -526,13 +605,14 @@ class _HomeScreenState extends State<HomeScreen> {
     Color? iconColor,
     required String label,
     required VoidCallback onTap,
+    VoidCallback? onEdit,
   }) {
     return InkWell(
       onTap: onTap,
       child: SizedBox(
         height: 40,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: EdgeInsets.only(left: 16, right: onEdit != null ? 4 : 16),
           child: Row(
             children: [
               Icon(icon, size: 17, color: iconColor),
@@ -545,11 +625,50 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(fontSize: 13),
                 ),
               ),
+              if (onEdit != null)
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: IconButton(
+                    icon: const Icon(Icons.edit_outlined, size: 15),
+                    padding: EdgeInsets.zero,
+                    tooltip: 'Editar apodo',
+                    onPressed: onEdit,
+                  ),
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _editNickname(Place place) async {
+    final controller = TextEditingController(text: place.nickname ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Apodo del lugar'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Ej: Casa, Trabajo'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
+    if (result == null) return;
+    await PlacesHistoryService.setNickname(place, result);
+    _loadPlaces();
   }
 
   Widget _sectionLabel(String text) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/alert_settings.dart';
 import '../services/settings_service.dart';
 
@@ -9,14 +10,45 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   AlertSettings _settings = const AlertSettings();
   bool _loading = true;
+  PermissionStatus? _notificationStatus;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+    _checkNotificationStatus();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // User may have flipped the permission from the OS settings screen.
+    if (state == AppLifecycleState.resumed) _checkNotificationStatus();
+  }
+
+  Future<void> _checkNotificationStatus() async {
+    final status = await Permission.notification.status;
+    if (!mounted) return;
+    setState(() => _notificationStatus = status);
+  }
+
+  Future<void> _fixNotificationPermission() async {
+    if (_notificationStatus == PermissionStatus.permanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await Permission.notification.request();
+    }
+    _checkNotificationStatus();
   }
 
   Future<void> _load() async {
@@ -32,6 +64,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await SettingsService.save(settings);
   }
 
+  /// Turning the second alert on needs a free minute strictly between the
+  /// final alarm and the first alert to place it - with none, disabling
+  /// stays a no-op that silently misleads, so this asks for room instead.
+  void _toggleSecondAlert(bool enable) {
+    if (!enable) {
+      _update(_settings.copyWith(secondEnabled: false));
+      return;
+    }
+    final alarm = _settings.alarmMinutes;
+    final first = _settings.firstMinutes;
+    if (first - alarm < 2) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text(
+            'No hay espacio para el segundo aviso: aumenta el tiempo del '
+            'primer aviso o reduce el de la alarma final.',
+          ),
+        ));
+      return;
+    }
+    final mid = (((alarm + first) / 2).round()).clamp(alarm + 1, first - 1);
+    _update(_settings.copyWith(secondEnabled: true, secondMinutes: mid));
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -43,6 +100,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               children: [
+                if (_notificationStatus != null &&
+                    !_notificationStatus!.isGranted)
+                  _notificationWarningCard(),
                 _sectionHeader('CUANDO AVISAR'),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(4, 0, 4, 10),
@@ -67,8 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     minutes: _settings.secondMinutes,
                     enabled: _settings.secondEnabled,
                     canToggle: true,
-                    onToggle: (v) =>
-                        _update(_settings.copyWith(secondEnabled: v)),
+                    onToggle: _toggleSecondAlert,
                     onChange: (v) =>
                         _update(_settings.copyWith(secondMinutes: v)),
                   ),
@@ -92,7 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _switchRow(
                     icon: Icons.volume_up_rounded,
                     label: 'Sonido',
-                    sublabel: 'Reproducir sonido en cada aviso',
+                    sublabel: 'Reproducir el sonido de la alarma final',
                     value: _settings.soundEnabled,
                     onChanged: (v) =>
                         _update(_settings.copyWith(soundEnabled: v)),
@@ -109,6 +168,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ]),
               ],
             ),
+    );
+  }
+
+  Widget _notificationWarningCard() {
+    final permanentlyDenied =
+        _notificationStatus == PermissionStatus.permanentlyDenied;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade100,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.notifications_off_rounded,
+              size: 20, color: Colors.black87),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Sin permiso de notificaciones no veras los avisos en '
+              'pantalla (la alarma con sonido/vibracion si seguira sonando).',
+              style: const TextStyle(fontSize: 12, color: Colors.black87),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _fixNotificationPermission,
+            child: Text(
+              permanentlyDenied ? 'Ajustes' : 'Activar',
+              style: const TextStyle(fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
