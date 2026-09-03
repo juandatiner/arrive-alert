@@ -6,6 +6,25 @@ import '../models/route_info.dart';
 class RoutingService {
   static const _baseUrl = 'https://router.project-osrm.org';
 
+  // Techo heuristico para manejo urbano real; OSRM ignora trafico del todo,
+  // asi que la duracion cruda es irrealmente rapida - ajustar esta constante si hace falta.
+  static const double _urbanDrivingCeilingKmh = 28;
+
+  // Margen deliberado: avisar de mas es barato, avisar tarde hace que el
+  // usuario se pase la parada. Duplicar la ETA dispara los avisos temprano.
+  static const double _safetyFactor = 2.0;
+
+  static double _applyUrbanTrafficHeuristic(
+    double distanceMeters,
+    double durationSeconds,
+    String profile,
+  ) {
+    if (profile != 'driving' || durationSeconds <= 0) return durationSeconds;
+    final impliedKmh = (distanceMeters / 1000) / (durationSeconds / 3600);
+    if (impliedKmh <= _urbanDrivingCeilingKmh) return durationSeconds;
+    return durationSeconds * (impliedKmh / _urbanDrivingCeilingKmh);
+  }
+
   /// profile: driving | walking | cycling
   static Future<RouteInfo> getRoute({
     required LatLng origin,
@@ -35,10 +54,14 @@ class RoutingService {
       final pair = c as List;
       return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
     }).toList();
+    final rawDistance = (route['distance'] as num).toDouble();
+    final rawDuration = (route['duration'] as num).toDouble();
     return RouteInfo(
       points: points,
-      distanceMeters: (route['distance'] as num).toDouble(),
-      durationSeconds: (route['duration'] as num).toDouble(),
+      distanceMeters: rawDistance,
+      durationSeconds:
+          _applyUrbanTrafficHeuristic(rawDistance, rawDuration, profile) *
+              _safetyFactor,
     );
   }
 }
