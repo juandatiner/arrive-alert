@@ -9,6 +9,7 @@ import '../services/places_history_service.dart';
 import '../services/routing_service.dart';
 import '../services/settings_service.dart';
 import '../utils/format.dart';
+import '../widgets/favorite_icon_picker.dart';
 import 'settings_screen.dart';
 import 'trip_screen.dart';
 
@@ -106,29 +107,54 @@ class _ConfirmTripSheetState extends State<_ConfirmTripSheet> {
 
   Future<void> _promptNickname() async {
     final controller = TextEditingController();
-    final result = await showDialog<String>(
+    String? selectedIcon;
+    bool saved = false;
+
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Apodo para este lugar (opcional)'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Ej: Casa, Trabajo'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Guardado en favoritos'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                    hintText: 'Apodo (opcional): Casa, Trabajo'),
+              ),
+              const SizedBox(height: 14),
+              const Text('Icono',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 6),
+              FavoriteIconPicker(
+                selected: selectedIcon,
+                onChanged: (key) => setDialogState(() => selectedIcon = key),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Omitir'),
+            ),
+            FilledButton(
+              onPressed: () {
+                saved = true;
+                Navigator.of(context).pop();
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Omitir'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('Guardar'),
-          ),
-        ],
       ),
     );
-    if (result == null || result.isEmpty || !mounted) return;
-    await PlacesHistoryService.setNickname(_place, result);
+    if (!saved || !mounted) return;
+    final nickname = controller.text.trim();
+    if (nickname.isNotEmpty) await PlacesHistoryService.setNickname(_place, nickname);
+    if (selectedIcon != null) await PlacesHistoryService.setIcon(_place, selectedIcon);
   }
 
   Future<void> _confirm() async {

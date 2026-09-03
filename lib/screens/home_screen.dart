@@ -6,27 +6,10 @@ import '../models/place.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../services/places_history_service.dart';
+import '../widgets/favorite_icon_picker.dart';
 import '../widgets/map_style.dart';
 import 'confirm_trip_screen.dart';
 import 'settings_screen.dart';
-
-/// Icon choices for a favorite place, keyed by what gets persisted in
-/// `Place.icon`. Order here is the order shown in the picker.
-const _favoritePlaceIcons = <String, IconData>{
-  'home': Icons.home_rounded,
-  'work': Icons.work_rounded,
-  'school': Icons.school_rounded,
-  'gym': Icons.fitness_center_rounded,
-  'restaurant': Icons.restaurant_rounded,
-  'shopping': Icons.shopping_cart_rounded,
-  'health': Icons.local_hospital_rounded,
-  'transit': Icons.directions_bus_rounded,
-  'heart': Icons.favorite_rounded,
-  'star': Icons.star_rounded,
-};
-
-IconData _iconForPlace(Place place) =>
-    _favoritePlaceIcons[place.icon] ?? Icons.star_rounded;
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -492,7 +475,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   _sectionLabel('Favoritos'),
                   ..._favorites.map(
                     (p) => _compactRow(
-                      icon: _iconForPlace(p),
+                      icon: iconForKey(p.icon),
                       iconColor: Colors.amber.shade600,
                       label: p.displayLabel,
                       onTap: () => _selectPlace(p),
@@ -699,44 +682,33 @@ class _HomeScreenState extends State<HomeScreen> {
               const Text('Icono',
                   style: TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: _favoritePlaceIcons.entries.map((entry) {
-                  final isSelected = selectedIcon == entry.key;
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => setDialogState(
-                        () => selectedIcon = isSelected ? null : entry.key),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isSelected
-                            ? Colors.amber.withValues(alpha: 0.25)
-                            : Colors.grey.withValues(alpha: 0.08),
-                        border: isSelected
-                            ? Border.all(color: Colors.amber.shade600, width: 1.5)
-                            : null,
-                      ),
-                      child: Icon(entry.value, size: 19),
+              FavoriteIconPicker(
+                selected: selectedIcon,
+                onChanged: (key) => setDialogState(() => selectedIcon = key),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red.shade700,
+                    side: BorderSide(color: Colors.red.shade200),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  );
-                }).toList(),
+                  ),
+                  onPressed: () {
+                    deleted = true;
+                    Navigator.of(context).pop();
+                  },
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  label: const Text('Eliminar favorito'),
+                ),
               ),
             ],
           ),
           actions: [
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-              onPressed: () {
-                deleted = true;
-                Navigator.of(context).pop();
-              },
-              child: const Text('Eliminar'),
-            ),
-            const Spacer(),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Cancelar'),
