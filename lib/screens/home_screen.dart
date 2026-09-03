@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/place.dart';
+import '../models/saved_trip.dart';
 import '../services/geocoding_service.dart';
 import '../services/location_service.dart';
 import '../services/places_history_service.dart';
+import '../services/saved_trips_service.dart';
+import '../services/transit_service.dart';
 import '../widgets/favorite_icon_picker.dart';
 import '../widgets/map_style.dart';
 import 'confirm_trip_screen.dart';
@@ -32,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Place> _results = [];
   List<Place> _recents = [];
   List<Place> _favorites = [];
+  List<SavedTrip> _favoriteTrips = [];
   bool _searching = false;
   bool _loadingLocation = true;
   bool _showFavoritesPanel = false;
@@ -83,10 +87,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadPlaces() async {
     final recents = await PlacesHistoryService.loadRecents();
     final favorites = await PlacesHistoryService.loadFavorites();
+    final trips = await SavedTripsService.load();
     if (!mounted) return;
     setState(() {
       _recents = recents;
       _favorites = favorites;
+      _favoriteTrips = trips;
     });
   }
 
@@ -475,18 +481,22 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFavoritesPanel() {
+    final rows = _favorites.length + _favoriteTrips.length;
+    final sections = (_favorites.isEmpty ? 0 : 1) +
+        (_favoriteTrips.isEmpty ? 0 : 1);
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: _favorites.isEmpty ? 76 : _favorites.length * 40.0 + 32,
+        maxHeight: rows == 0 ? 76 : rows * 44.0 + sections * 26 + 12,
       ),
       child: Material(
         elevation: 2,
-        child: _favorites.isEmpty
+        child: rows == 0
             ? const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'Sin favoritos todavia. Marca uno con la estrella al '
-                  'confirmar un viaje.',
+                  'Sin favoritos todavia. Marca un lugar con la estrella al '
+                  'confirmar un viaje, o una ruta de bus con la estrella al '
+                  'elegir sus paraderos.',
                   style: TextStyle(fontSize: 12.5, color: Colors.grey),
                 ),
               )
@@ -494,20 +504,90 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 shrinkWrap: true,
                 children: [
-                  _sectionLabel('Favoritos'),
-                  ..._favorites.map(
-                    (p) => _compactRow(
-                      icon: iconForKey(p.icon),
-                      iconColor: Colors.amber.shade600,
-                      label: p.displayLabel,
-                      onTap: () => _selectPlace(p),
-                      onEdit: () => _editFavorite(p),
+                  if (_favoriteTrips.isNotEmpty) ...[
+                    _sectionLabel('Rutas'),
+                    ..._favoriteTrips.map(_buildFavoriteTripRow),
+                  ],
+                  if (_favorites.isNotEmpty) ...[
+                    _sectionLabel('Lugares'),
+                    ..._favorites.map(
+                      (p) => _compactRow(
+                        icon: iconForKey(p.icon),
+                        iconColor: Colors.amber.shade600,
+                        label: p.displayLabel,
+                        onTap: () => _selectPlace(p),
+                        onEdit: () => _editFavorite(p),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
       ),
     );
+  }
+
+  Widget _buildFavoriteTripRow(SavedTrip trip) {
+    final color = kindColor(trip.kind);
+    return InkWell(
+      onTap: () => _openFavoriteTrip(trip),
+      child: SizedBox(
+        height: 44,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  trip.routeShortName,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${trip.originName}  →  ${trip.destinationName}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFavoriteTrip(SavedTrip trip) async {
+    final index = await TransitService.loadIndex();
+    final summary = index.where((r) => r.id == trip.routeId).firstOrNull;
+    if (!mounted) return;
+    if (summary == null) {
+      await SavedTripsService.remove(trip);
+      if (!mounted) return;
+      _loadPlaces();
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RouteMapScreen(
+          summary: summary,
+          initialOriginStop: trip.originIndex,
+          initialDestinationStop: trip.destinationIndex,
+        ),
+      ),
+    );
+    if (mounted) _loadPlaces();
   }
 
   Widget _buildDestinationCard(BuildContext context) {

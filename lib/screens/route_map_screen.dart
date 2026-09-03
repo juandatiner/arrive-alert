@@ -89,8 +89,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
         content: Text(saved
-            ? 'Ruta guardada: ${trip.routeShortName} · ${trip.originName} a ${trip.destinationName}'
-            : 'Ruta quitada de guardadas'),
+            ? 'Ruta en favoritos: ${trip.routeShortName} · ${trip.originName} a ${trip.destinationName}'
+            : 'Ruta quitada de favoritos'),
       ));
   }
 
@@ -259,10 +259,11 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           if (_currentTrip != null)
             IconButton(
               icon: Icon(
-                _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                _isSaved ? Icons.star_rounded : Icons.star_border_rounded,
                 color: _isSaved ? Colors.amber.shade600 : null,
               ),
-              tooltip: _isSaved ? 'Quitar de guardadas' : 'Guardar esta ruta',
+              tooltip:
+                  _isSaved ? 'Quitar de favoritos' : 'Agregar a favoritos',
               onPressed: _toggleSaved,
             ),
           if (_originStop != null)
@@ -342,8 +343,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       markers.add(
         Marker(
           point: route.stops[i].point,
-          width: selected ? 34 : 20,
-          height: selected ? 34 : 20,
+          width: selected ? 32 : 14,
+          height: selected ? 32 : 14,
           child: GestureDetector(
             onTap: () => _onStopTapped(i),
             child: Container(
@@ -356,7 +357,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                         : Colors.white,
                 border: Border.all(
                   color: selected ? Colors.white : color,
-                  width: 3,
+                  width: selected ? 3 : 2.5,
                 ),
                 boxShadow: [
                   BoxShadow(

@@ -181,7 +181,7 @@ class _RoutePickerSheetState extends State<_RoutePickerSheet> {
                             padding: const EdgeInsets.only(bottom: 24),
                             children: [
                               if (_showSaved) ...[
-                                _sectionLabel('MIS RUTAS'),
+                                _sectionLabel('RUTAS FAVORITAS'),
                                 ..._saved.map(_buildSavedCard),
                                 const SizedBox(height: 8),
                                 _sectionLabel('TODAS LAS RUTAS'),
