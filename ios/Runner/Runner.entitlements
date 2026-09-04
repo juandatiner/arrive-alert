@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Without this, iOS silently downgrades every `timeSensitive`
+	     notification the app asks for to `active`, so the arrival alarm does
+	     not break through a Focus mode. Apple grants this one automatically;
+	     no request form. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+
+	<!-- Critical Alerts (bypasses the mute switch and Focus, and sets its own
+	     volume) needs Apple's approval before it can be added here - adding it
+	     unapproved breaks code signing:
+	     https://developer.apple.com/contact/request/notifications-critical-alerts-entitlement/
+	     NotificationService already asks for the permission at runtime and
+	     falls back to timeSensitive when it is not granted, so the only change
+	     needed once Apple approves is the key below:
+
+	<key>com.apple.developer.usernotifications.critical-alerts</key>
+	<true/>
+	-->
+</dict>
+</plist>

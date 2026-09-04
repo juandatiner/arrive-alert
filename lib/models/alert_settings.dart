@@ -7,6 +7,10 @@ class AlertSettings {
   final bool soundEnabled;
   final bool vibrationEnabled;
 
+  /// The live-bus feed has no per-route endpoint: every poll pulls the whole
+  /// fleet, about 830 KB. Worth having, worth being able to turn off.
+  final bool liveVehiclesEnabled;
+
   const AlertSettings({
     this.firstMinutes = 10,
     this.firstEnabled = true,
@@ -15,6 +19,7 @@ class AlertSettings {
     this.alarmMinutes = 2,
     this.soundEnabled = true,
     this.vibrationEnabled = true,
+    this.liveVehiclesEnabled = true,
   });
 
   /// Enforces alarmMinutes >= 1, and when the second alert is enabled,
@@ -30,6 +35,7 @@ class AlertSettings {
     required int alarmMinutes,
     required bool soundEnabled,
     required bool vibrationEnabled,
+    required bool liveVehiclesEnabled,
   }) {
     final alarm = alarmMinutes.clamp(1, 90);
     final int first;
@@ -49,6 +55,7 @@ class AlertSettings {
       alarmMinutes: alarm,
       soundEnabled: soundEnabled,
       vibrationEnabled: vibrationEnabled,
+      liveVehiclesEnabled: liveVehiclesEnabled,
     );
   }
 
@@ -60,6 +67,7 @@ class AlertSettings {
     int? alarmMinutes,
     bool? soundEnabled,
     bool? vibrationEnabled,
+    bool? liveVehiclesEnabled,
   }) {
     return AlertSettings.normalized(
       firstMinutes: firstMinutes ?? this.firstMinutes,
@@ -69,6 +77,7 @@ class AlertSettings {
       alarmMinutes: alarmMinutes ?? this.alarmMinutes,
       soundEnabled: soundEnabled ?? this.soundEnabled,
       vibrationEnabled: vibrationEnabled ?? this.vibrationEnabled,
+      liveVehiclesEnabled: liveVehiclesEnabled ?? this.liveVehiclesEnabled,
     );
   }
 
@@ -80,6 +89,7 @@ class AlertSettings {
         'alarmMinutes': alarmMinutes,
         'soundEnabled': soundEnabled,
         'vibrationEnabled': vibrationEnabled,
+        'liveVehiclesEnabled': liveVehiclesEnabled,
       };
 
   factory AlertSettings.fromJson(Map<String, dynamic> json) {
@@ -91,6 +101,7 @@ class AlertSettings {
       alarmMinutes: json['alarmMinutes'] as int? ?? 2,
       soundEnabled: json['soundEnabled'] as bool? ?? true,
       vibrationEnabled: json['vibrationEnabled'] as bool? ?? true,
+      liveVehiclesEnabled: json['liveVehiclesEnabled'] as bool? ?? true,
     );
   }
 }

@@ -3,14 +3,23 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/saved_trip.dart';
 import '../models/transit_route.dart';
+import 'dart:async';
+
+import '../services/live_vehicles_feed.dart';
+import '../services/live_vehicles_service.dart';
 import '../services/location_service.dart';
 import '../services/saved_trips_service.dart';
 import '../services/transit_service.dart';
 import '../utils/format.dart';
-import '../utils/path_geometry.dart';
+import '../widgets/live_bus_marker.dart';
 import '../widgets/map_style.dart';
+import '../widgets/route_lines.dart';
 import 'route_picker_sheet.dart' show kindColor;
 import 'trip_screen.dart';
+
+/// Where you get off is drawn like a finish line, not like a warning - red
+/// is the app's colour for the alarm, and the destination is not an alarm.
+const arrivalColor = Color(0xFF1B1B1F);
 
 /// Draws one route exactly as the agency publishes it and lets the rider tap
 /// the stop they board at and the stop they get off at.
@@ -37,14 +46,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   final _mapController = MapController();
 
   TransitRoute? _route;
-  RoutePath? _path;
-  List<int>? _stopShapeIndices;
   String? _error;
 
   int? _originStop;
   int? _destinationStop;
   LatLng? _myLocation;
   bool _isSaved = false;
+
+  List<LiveVehicle> _liveVehicles = const [];
+  StreamSubscription<List<LiveVehicle>>? _liveSub;
+  final _liveSnack = LiveBusSnackController();
 
 
   @override
@@ -97,23 +108,44 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   Future<void> _load() async {
     try {
       final route = await TransitService.loadRoute(widget.summary.id);
-      final path = RoutePath(route.shape);
-      // Stops sit near, not exactly on, the drawn shape - snap each one once
-      // so every later measurement is a cheap index lookup.
-      final indices =
-          route.stops.map((s) => path.nearestIndex(s.point)).toList();
       if (!mounted) return;
-      setState(() {
-        _route = route;
-        _path = path;
-        _stopShapeIndices = indices;
-      });
+      setState(() => _route = route);
+      _startLiveVehicles(route.id);
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitRoute());
       _refreshSavedState();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = 'No se pudo cargar la ruta.');
     }
+  }
+
+  void _startLiveVehicles(String routeId) {
+    _liveSub?.cancel();
+    LiveVehiclesFeed.instance.fetching.addListener(_onFetchingChanged);
+    _onFetchingChanged();
+    _liveSub = LiveVehiclesFeed.instance.subscribe((vehicles) {
+      if (!mounted) return;
+      setState(() => _liveVehicles =
+          vehicles.where((v) => v.routeId == routeId).toList());
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveSub?.cancel();
+    LiveVehiclesFeed.instance.fetching.removeListener(_onFetchingChanged);
+    _liveSnack.dispose();
+    super.dispose();
+  }
+
+  void _onFetchingChanged() {
+    if (!mounted) return;
+    _liveSnack.update(
+      context,
+      fetching: LiveVehiclesFeed.instance.fetching.value,
+      hasVehicles: _liveVehicles.isNotEmpty,
+      bottomInset: 210,
+    );
   }
 
   Future<void> _locateMe() async {
@@ -135,9 +167,11 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   void _fitRoute() {
     final route = _route;
     if (route == null || route.shape.isEmpty) return;
+    // Opening a saved leg should frame that leg, not the whole line it sits on.
+    final leg = _legPath;
     _mapController.fitCamera(
       CameraFit.bounds(
-        bounds: LatLngBounds.fromPoints(route.shape),
+        bounds: LatLngBounds.fromPoints(leg.isEmpty ? route.shape : leg),
         padding: const EdgeInsets.fromLTRB(40, 60, 40, 220),
       ),
     );
@@ -201,50 +235,27 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     });
   }
 
-  double? get _legMeters {
-    final path = _path;
-    final indices = _stopShapeIndices;
-    final origin = _originStop;
-    final destination = _destinationStop;
-    if (path == null || indices == null || origin == null || destination == null) {
-      return null;
-    }
-    return path.metersBetween(indices[origin], indices[destination]);
-  }
-
-  List<LatLng> get _legPath {
-    final path = _path;
-    final indices = _stopShapeIndices;
-    final origin = _originStop;
-    final destination = _destinationStop;
-    if (path == null || indices == null || origin == null || destination == null) {
-      return const [];
-    }
-    return path.slice(indices[origin], indices[destination]);
-  }
-
-  void _startTrip() {
+  TransitTripPlan? get _plan {
     final route = _route;
     final origin = _originStop;
     final destination = _destinationStop;
-    final meters = _legMeters;
-    if (route == null || origin == null || destination == null || meters == null) {
-      return;
-    }
-    final plan = TransitTripPlan(
-      routeShortName: route.shortName,
-      kind: route.kind,
-      path: _legPath,
-      originStop: route.stops[origin],
-      destinationStop: route.stops[destination],
-      meters: meters,
-    );
+    if (route == null || origin == null || destination == null) return null;
+    return route.legBetween(origin, destination);
+  }
+
+  double? get _legMeters => _plan?.meters;
+
+  List<LatLng> get _legPath => _plan?.path ?? const [];
+
+  void _startTrip() {
+    final plan = _plan;
+    if (plan == null) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => TripScreen(
           destination: plan.destinationStop.point,
           destinationLabel: plan.destinationStop.name,
-          transitPlan: plan,
+          legs: [plan],
         ),
       ),
     );
@@ -299,16 +310,19 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             MapTileLayer(),
             PolylineLayer(
               polylines: [
-                Polyline(
-                  points: route.shape,
-                  strokeWidth: 5,
-                  color: color.withValues(alpha: leg.isEmpty ? 0.85 : 0.25),
-                ),
-                if (leg.isNotEmpty)
-                  Polyline(points: leg, strokeWidth: 7, color: color),
+                // The whole line the bus runs stays visible as context; the
+                // rider's own stretch sits on top of it, thicker and with a
+                // white casing so the two never read as one smear.
+                if (leg.isEmpty)
+                  RouteLines.whole(route.shape, color)
+                else ...[
+                  RouteLines.context(route.shape, color),
+                  RouteLines.leg(leg, color),
+                ],
               ],
             ),
             MarkerLayer(markers: _buildStopMarkers(route, color)),
+            MarkerLayer(markers: liveBusMarkers(_liveVehicles, color)),
             const MapAttribution(),
           ],
         ),
@@ -335,10 +349,22 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
 
   List<Marker> _buildStopMarkers(TransitRoute route, Color color) {
     final markers = <Marker>[];
+    final origin = _originStop;
+    final destination = _destinationStop;
+    final lo = origin != null && destination != null
+        ? (origin < destination ? origin : destination)
+        : null;
+    final hi = origin != null && destination != null
+        ? (origin < destination ? destination : origin)
+        : null;
+
     for (var i = 0; i < route.stops.length; i++) {
-      final isOrigin = i == _originStop;
-      final isDestination = i == _destinationStop;
+      final isOrigin = i == origin;
+      final isDestination = i == destination;
       final selected = isOrigin || isDestination;
+      // Stops off the leg stay tappable - that is how the rider extends or
+      // moves the selection - but they fade so the leg is what reads.
+      final offLeg = lo != null && (i < lo || i > hi!);
 
       markers.add(
         Marker(
@@ -347,33 +373,38 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           height: selected ? 32 : 14,
           child: GestureDetector(
             onTap: () => _onStopTapped(i),
-            child: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isOrigin
-                    ? Colors.green.shade600
-                    : isDestination
-                        ? Colors.red.shade600
-                        : Colors.white,
-                border: Border.all(
-                  color: selected ? Colors.white : color,
-                  width: selected ? 3 : 2.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+            child: Opacity(
+              opacity: offLeg ? 0.35 : 1,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isOrigin
+                      ? Colors.green.shade600
+                      : isDestination
+                          ? arrivalColor
+                          : Colors.white,
+                  border: Border.all(
+                    color: selected ? Colors.white : color,
+                    width: selected ? 3 : 2.5,
                   ),
-                ],
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: selected
+                    ? Icon(
+                        isOrigin
+                            ? Icons.directions_bus_rounded
+                            : Icons.flag_rounded,
+                        size: 17,
+                        color: Colors.white,
+                      )
+                    : null,
               ),
-              child: selected
-                  ? Icon(
-                      isOrigin ? Icons.directions_bus_rounded : Icons.flag_rounded,
-                      size: 17,
-                      color: Colors.white,
-                    )
-                  : null,
             ),
           ),
         ),
@@ -439,12 +470,14 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           const SizedBox(height: 6),
           _buildStopLine(
             icon: Icons.flag_rounded,
-            color: Colors.red.shade600,
+            color: arrivalColor,
             label: destination == null
                 ? 'Ahora toca donde te bajas'
                 : route.stops[destination].name,
             placeholder: destination == null,
           ),
+          const SizedBox(height: 8),
+          LiveBusStatus(count: _liveVehicles.length),
           if (meters != null) ...[
             const SizedBox(height: 10),
             Row(

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
+import 'services/live_vehicles_service.dart';
 import 'services/notification_service.dart';
+import 'services/settings_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
   await NotificationService.requestPermissions();
+  LiveVehiclesService.enabled =
+      (await SettingsService.load()).liveVehiclesEnabled;
   runApp(const ArriveAlertApp());
 }
 
