@@ -10,51 +10,105 @@ import '../services/live_vehicles_service.dart';
 class LiveBusMarker extends StatelessWidget {
   final LiveVehicle vehicle;
   final Color color;
+  final VoidCallback? onTap;
 
   const LiveBusMarker({
     super.key,
     required this.vehicle,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final bearing = vehicle.bearing;
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        border: Border.all(color: Colors.white, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: bearing == null
-          ? const Icon(Icons.directions_bus_rounded,
-              size: 14, color: Colors.white)
-          : Transform.rotate(
-              angle: bearing * 3.1415926535 / 180,
-              child: const Icon(Icons.navigation_rounded,
-                  size: 14, color: Colors.white),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
             ),
+          ],
+        ),
+        child: bearing == null
+            ? const Icon(
+                Icons.directions_bus_rounded,
+                size: 14,
+                color: Colors.white,
+              )
+            : Transform.rotate(
+                angle: bearing * 3.1415926535 / 180,
+                child: const Icon(
+                  Icons.navigation_rounded,
+                  size: 14,
+                  color: Colors.white,
+                ),
+              ),
+      ),
     );
   }
 }
 
-List<Marker> liveBusMarkers(List<LiveVehicle> vehicles, Color color) {
+List<Marker> liveBusMarkers(
+  List<LiveVehicle> vehicles,
+  Color color, {
+  void Function(LiveVehicle vehicle)? onTap,
+}) {
   return [
     for (final vehicle in vehicles)
       Marker(
         point: vehicle.point,
-        width: 26,
-        height: 26,
-        child: LiveBusMarker(vehicle: vehicle, color: color),
+        // Bigger than the drawn circle so a moving bus is still tappable.
+        width: 40,
+        height: 40,
+        child: Center(
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: LiveBusMarker(
+              vehicle: vehicle,
+              color: color,
+              onTap: onTap == null ? null : () => onTap(vehicle),
+            ),
+          ),
+        ),
       ),
   ];
+}
+
+/// What a tapped bus says about itself: its fleet number, the service it is
+/// running, and how old the position is.
+void showLiveBusDetails(
+  BuildContext context,
+  LiveVehicle vehicle, {
+  required String routeShortName,
+}) {
+  final reportedAt = vehicle.reportedAt;
+  final age = reportedAt == null
+      ? null
+      : DateTime.now().difference(reportedAt).inSeconds;
+  final number = vehicle.id.isEmpty ? 'sin numero' : 'Bus ${vehicle.id}';
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(
+          '$number · $routeShortName'
+          '${age == null ? '' : ' · reportado hace ${age}s'}',
+          style: const TextStyle(fontSize: 13),
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: const StadiumBorder(),
+        duration: const Duration(seconds: 4),
+      ),
+    );
 }
 
 /// One line telling the rider whether live positions are coming through.
@@ -81,8 +135,8 @@ class LiveBusStatus extends StatelessWidget {
           off
               ? Icons.sensors_off_rounded
               : unavailable
-                  ? Icons.cloud_off_rounded
-                  : Icons.sensors_rounded,
+              ? Icons.cloud_off_rounded
+              : Icons.sensors_rounded,
           size: 14,
           color: off || unavailable ? Colors.grey : Colors.green.shade600,
         ),
@@ -92,11 +146,11 @@ class LiveBusStatus extends StatelessWidget {
             off
                 ? 'Buses en vivo apagados en Ajustes'
                 : unavailable
-                    ? 'Buses en vivo no disponibles (no responde TransMilenio)'
-                    : count == 0
-                        ? 'Buscando buses en vivo...'
-                        : '$count ${count == 1 ? 'bus' : 'buses'} en vivo'
-                            '${age == null ? '' : ' · hace ${age}s'}',
+                ? 'Buses en vivo no disponibles (no responde TransMilenio)'
+                : count == 0
+                ? 'Buscando buses en vivo...'
+                : '$count ${count == 1 ? 'bus' : 'buses'} en vivo'
+                      '${age == null ? '' : ' · hace ${age}s'}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -165,7 +219,11 @@ class LiveBusSnackController {
           backgroundColor: const Color(0xCC4A4A4F),
           elevation: 0,
           behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.only(left: 16, right: 16, bottom: bottomInset + 12),
+          margin: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            bottom: bottomInset + 12,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           shape: const StadiumBorder(),
           duration: const Duration(minutes: 5),

@@ -3,13 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../models/journey.dart';
 import '../models/transit_route.dart';
-import 'dart:async';
-
-import '../services/live_vehicles_feed.dart';
-import '../services/live_vehicles_service.dart';
 import '../services/transit_service.dart';
 import '../utils/format.dart';
-import '../widgets/live_bus_marker.dart';
 import '../widgets/map_style.dart';
 import '../widgets/route_lines.dart';
 import '../widgets/route_badge.dart';
@@ -46,9 +41,6 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
   List<TransitRouteSummary>? _summaries;
   String? _error;
 
-  List<LiveVehicle> _liveVehicles = const [];
-  StreamSubscription<List<LiveVehicle>>? _liveSub;
-  final _liveSnack = LiveBusSnackController();
 
   @override
   void initState() {
@@ -72,41 +64,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
         _summaries = summaries;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitJourney());
-      _startLiveVehicles();
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'No se pudo cargar el trazado de la ruta.');
     }
-  }
-
-  void _startLiveVehicles() {
-    final wanted = {for (final ride in widget.journey.rides) ride.routeId};
-    _liveSub?.cancel();
-    LiveVehiclesFeed.instance.fetching.addListener(_onFetchingChanged);
-    _onFetchingChanged();
-    _liveSub = LiveVehiclesFeed.instance.subscribe((vehicles) {
-      if (!mounted) return;
-      setState(() => _liveVehicles =
-          vehicles.where((v) => wanted.contains(v.routeId)).toList());
-    });
-  }
-
-  @override
-  void dispose() {
-    _liveSub?.cancel();
-    LiveVehiclesFeed.instance.fetching.removeListener(_onFetchingChanged);
-    _liveSnack.dispose();
-    super.dispose();
-  }
-
-  void _onFetchingChanged() {
-    if (!mounted) return;
-    _liveSnack.update(
-      context,
-      fetching: LiveVehiclesFeed.instance.fetching.value,
-      hasVehicles: _liveVehicles.isNotEmpty,
-      bottomInset: 60,
-    );
   }
 
   void _fitJourney() {
@@ -191,7 +152,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
               RouteLines.context(leg.routePath, kindColor(leg.kind)),
             for (final leg in widget.journey.legs)
               if (leg is WalkLeg) RouteLines.walk([leg.from, leg.to]),
-            for (final leg in legs) RouteLines.leg(leg.path, kindColor(leg.kind)),
+            for (final leg in legs) RouteLines.leg(leg.path),
           ],
         ),
         MarkerLayer(
@@ -213,7 +174,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
                 point: leg.originStop.point,
                 width: 26,
                 height: 26,
-                child: _pin(Icons.directions_bus_rounded, Colors.green.shade600),
+                child: _pin(boardingIcon, Colors.green.shade600),
               ),
               Marker(
                 point: leg.destinationStop.point,
@@ -228,15 +189,6 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
               height: 36,
               child: const Icon(Icons.location_on, color: arrivalColor, size: 34),
             ),
-          ],
-        ),
-        MarkerLayer(
-          markers: [
-            for (final ride in widget.journey.rides)
-              ...liveBusMarkers(
-                _liveVehicles.where((v) => v.routeId == ride.routeId).toList(),
-                kindColor(ride.kind),
-              ),
           ],
         ),
         const MapAttribution(),
@@ -286,10 +238,6 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
               children: rows,
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: LiveBusStatus(count: _liveVehicles.length),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -413,7 +361,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
                       visualDensity: VisualDensity.compact,
                     ),
                     onPressed: () => _openRouteMap(rideIndex),
-                    child: const Text('Ver todos los paraderos',
+                    child: const Text('Ver paraderos y buses en vivo',
                         style: TextStyle(fontSize: 12)),
                   ),
                 ),

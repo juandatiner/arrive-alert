@@ -21,6 +21,10 @@ import 'trip_screen.dart';
 /// is the app's colour for the alarm, and the destination is not an alarm.
 const arrivalColor = Color(0xFF1B1B1F);
 
+/// Where you get on. Deliberately not a bus: the live buses on the same map
+/// are bus icons, and two of them meant nothing.
+const boardingIcon = Icons.login_rounded;
+
 /// Draws one route exactly as the agency publishes it and lets the rider tap
 /// the stop they board at and the stop they get off at.
 class RouteMapScreen extends StatefulWidget {
@@ -317,12 +321,22 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                   RouteLines.whole(route.shape, color)
                 else ...[
                   RouteLines.context(route.shape, color),
-                  RouteLines.leg(leg, color),
+                  RouteLines.leg(leg),
                 ],
               ],
             ),
             MarkerLayer(markers: _buildStopMarkers(route, color)),
-            MarkerLayer(markers: liveBusMarkers(_liveVehicles, color)),
+            MarkerLayer(
+              markers: liveBusMarkers(
+                _liveVehicles,
+                color,
+                onTap: (vehicle) => showLiveBusDetails(
+                  context,
+                  vehicle,
+                  routeShortName: route.shortName,
+                ),
+              ),
+            ),
             const MapAttribution(),
           ],
         ),
@@ -397,9 +411,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 ),
                 child: selected
                     ? Icon(
-                        isOrigin
-                            ? Icons.directions_bus_rounded
-                            : Icons.flag_rounded,
+                        isOrigin ? boardingIcon : Icons.flag_rounded,
                         size: 17,
                         color: Colors.white,
                       )
@@ -460,7 +472,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           ),
           const SizedBox(height: 10),
           _buildStopLine(
-            icon: Icons.directions_bus_rounded,
+            icon: boardingIcon,
             color: Colors.green.shade600,
             label: origin == null
                 ? 'Toca en el mapa donde te subes'
