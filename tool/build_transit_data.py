@@ -6,6 +6,9 @@ which is what collapses stop_times.txt from 544MB to a few hundred KB.
 """
 import csv, json, math, os, sys, collections
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from shape_snap import snap_stops
+
 csv.field_size_limit(sys.maxsize)
 GTFS = 'gtfs'
 OUT = 'transit_out'
@@ -145,6 +148,11 @@ def main():
         if not stop_list or not pts:
             continue
 
+        shape = [(round(la, 5), round(lo, 5)) for la, lo in pts]
+        # Precomputed so the app never has to guess where a stop sits on the
+        # shape - see tool/shape_snap.py for why guessing goes wrong.
+        stop_vertices, stop_meters = snap_stops(
+            shape, [(s['lat'], s['lon']) for s in stop_list])
         json.dump(
             {
                 'id': rid,
@@ -152,8 +160,10 @@ def main():
                 'long': meta['long'],
                 'kind': meta['kind'],
                 'color': meta['color'],
-                'shape': [[round(la, 5), round(lo, 5)] for la, lo in pts],
+                'shape': [[la, lo] for la, lo in shape],
                 'stops': stop_list,
+                'si': stop_vertices,
+                'sm': stop_meters,
             },
             open(f'{OUT}/routes/{rid}.json', 'w'),
             separators=(',', ':'),
