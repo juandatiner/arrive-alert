@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/alert_settings.dart';
+import '../services/live_vehicles_feed.dart';
+import '../services/live_vehicles_service.dart';
 import '../services/settings_service.dart';
 import '../services/transit_update_service.dart';
 
@@ -74,6 +76,8 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   Future<void> _update(AlertSettings settings) async {
     setState(() => _settings = settings);
+    LiveVehiclesService.enabled = settings.liveVehiclesEnabled;
+    LiveVehiclesFeed.instance.settingChanged();
     await SettingsService.save(settings);
   }
 
@@ -177,6 +181,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                     value: _settings.vibrationEnabled,
                     onChanged: (v) =>
                         _update(_settings.copyWith(vibrationEnabled: v)),
+                  ),
+                ]),
+                const SizedBox(height: 28),
+                _sectionHeader('BUSES EN VIVO'),
+                _groupCard([
+                  _switchRow(
+                    icon: Icons.sensors_rounded,
+                    label: 'Mostrar buses en vivo',
+                    sublabel: 'Posiciones reales de TransMilenio y SITP, que '
+                        'se refrescan cada 15 s. Cada refresco baja ~830 KB: '
+                        'el servidor no deja pedir una sola ruta, y solo '
+                        'corre con el mapa abierto.',
+                    value: _settings.liveVehiclesEnabled,
+                    onChanged: (v) =>
+                        _update(_settings.copyWith(liveVehiclesEnabled: v)),
                   ),
                 ]),
                 const SizedBox(height: 28),

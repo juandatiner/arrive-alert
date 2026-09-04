@@ -1,1 +1,12 @@
 #include "Generated.xcconfig"
+
+// Entitlements are off by default: `com.apple.developer.usernotifications
+// .time-sensitive` is not available to personal (free) Apple teams, and
+// leaving it on makes signing fail with "Personal development teams ... do
+// not support the Time Sensitive Notifications capability".
+//
+// On a paid Apple Developer account, set this to:
+//   ARRIVE_ALERT_ENTITLEMENTS = Runner/Runner.entitlements
+// and enable "Time Sensitive Notifications" for the App ID. Everything else
+// in the alarm (the 28 s sound, the repeats) works without it.
+ARRIVE_ALERT_ENTITLEMENTS =

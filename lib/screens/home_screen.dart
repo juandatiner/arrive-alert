@@ -12,6 +12,7 @@ import '../services/transit_service.dart';
 import '../widgets/favorite_icon_picker.dart';
 import '../widgets/map_style.dart';
 import 'confirm_trip_screen.dart';
+import 'journey_results_screen.dart';
 import 'route_map_screen.dart';
 import 'route_picker_sheet.dart';
 import 'settings_screen.dart';
@@ -213,6 +214,24 @@ class _HomeScreenState extends State<HomeScreen> {
       destination: _destinationLatLng!,
       destinationLabel: _destinationLabel!,
     ).then((_) => _loadPlaces());
+  }
+
+  /// The other half of the choice: instead of just watching the straight-line
+  /// approach to the destination, work out which services get there.
+  void _goToJourneyOptions() {
+    final destination = _destinationLatLng;
+    final label = _destinationLabel;
+    final origin = _currentLatLng;
+    if (destination == null || label == null || origin == null) return;
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+          builder: (_) => JourneyResultsScreen(
+            origin: origin,
+            destination: destination,
+            destinationLabel: label,
+          ),
+        ))
+        .then((_) => _loadPlaces());
   }
 
   @override
@@ -663,56 +682,96 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          _buildStartButton(),
+          _buildTripOptions(),
         ],
       ),
     );
   }
 
-  Widget _buildStartButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF4F86FF), Color(0xFF2451B5)],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF2451B5).withValues(alpha: 0.4),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
+  /// Two ways to use a destination, offered side by side: let the app watch
+  /// the approach and wake you, or work out which bus actually goes there.
+  Widget _buildTripOptions() {
+    final ready = _destinationLabel != null;
+    final canPlan = ready && _currentLatLng != null;
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 52,
+            child: OutlinedButton(
+              onPressed: ready ? _goToConfirm : null,
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.notifications_active_outlined, size: 18),
+                  SizedBox(height: 2),
+                  Text(
+                    'Solo avisarme',
+                    style: TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: _goToConfirm,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.navigation_rounded, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Text(
-                  'Iniciar viaje',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15.5,
-                    letterSpacing: 0.2,
+        const SizedBox(width: 10),
+        Expanded(
+          child: SizedBox(
+            height: 52,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: canPlan
+                      ? const [Color(0xFF4F86FF), Color(0xFF2451B5)]
+                      : [Colors.grey.shade400, Colors.grey.shade500],
+                ),
+                boxShadow: canPlan
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF2451B5).withValues(alpha: 0.4),
+                          blurRadius: 16,
+                          offset: const Offset(0, 6),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: canPlan ? _goToJourneyOptions : null,
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.directions_bus_rounded,
+                          color: Colors.white, size: 18),
+                      SizedBox(height: 2),
+                      Text(
+                        'Buscar ruta de bus',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 
