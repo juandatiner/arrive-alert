@@ -43,6 +43,45 @@ void main() {
     expect(route.schedule.windowFor(DateTime.monday)!.label, '18:43 - 00:30');
   });
 
+  group('a service that is not running right now says so', () {
+    // M86 runs 22:10-23:00 every day.
+    final m86 = _summary('M86', 0x7F, [
+      for (var i = 0; i < 7; i++) [1330, 1380, 6],
+    ]);
+
+    test('before the first bus it is waiting, not running', () {
+      final at = m86.schedule.statusAt(DateTime(2026, 9, 7, 18, 0));
+      expect(at.status, ServiceStatus.notYet);
+      expect(at.window!.firstClock, '22:10');
+    });
+
+    test('between first and last bus it is running', () {
+      expect(m86.schedule.statusAt(DateTime(2026, 9, 7, 22, 30)).status,
+          ServiceStatus.running);
+    });
+
+    test('after the last bus it is finished', () {
+      final at = m86.schedule.statusAt(DateTime(2026, 9, 7, 23, 30));
+      expect(at.status, ServiceStatus.finished);
+      expect(at.window!.lastClock, '23:00');
+    });
+  });
+
+  test('a service running past midnight is still running after midnight', () {
+    // Monday 18:43 to 00:30, which the feed stores as 24:30.
+    final route = _summary('6-4', 1, [
+      [1123, 1470, 9],
+    ]);
+    // Tuesday at 00:10 - the route does not run Tuesdays, but Monday's last
+    // buses are still out.
+    final at = route.schedule.statusAt(DateTime(2026, 9, 8, 0, 10));
+    expect(at.status, ServiceStatus.running);
+    expect(at.window!.lastClock, '00:30');
+    // By 01:00 Monday's service is over and Tuesday has none.
+    expect(route.schedule.statusAt(DateTime(2026, 9, 8, 1, 0)).status,
+        ServiceStatus.unknown);
+  });
+
   test('a pack built before schedules existed still shows every route', () {
     final route = TransitRouteSummary.fromJson({
       'id': '1',
@@ -55,5 +94,8 @@ void main() {
       expect(route.schedule.runsOn(day), isTrue);
     }
     expect(route.schedule.windowFor(DateTime.monday), isNull);
+    // Hours unknown is not the same as "not running": the row stays lit.
+    expect(route.schedule.statusAt(DateTime(2026, 9, 7, 3, 0)).status,
+        ServiceStatus.unknown);
   });
 }
