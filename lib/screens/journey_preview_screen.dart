@@ -5,6 +5,7 @@ import '../models/journey.dart';
 import '../models/transit_route.dart';
 import '../services/transit_service.dart';
 import '../utils/format.dart';
+import '../widgets/map_pins.dart';
 import '../widgets/map_style.dart';
 import '../widgets/route_lines.dart';
 import '../widgets/route_badge.dart';
@@ -40,6 +41,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
   List<TransitTripPlan>? _legs;
   List<TransitRouteSummary>? _summaries;
   String? _error;
+  bool _mapReady = false;
 
 
   @override
@@ -63,7 +65,7 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
         _legs = legs;
         _summaries = summaries;
       });
-      WidgetsBinding.instance.addPostFrameCallback((_) => _fitJourney());
+      _fitJourney();
     } catch (_) {
       if (!mounted) return;
       setState(() => _error = 'No se pudo cargar el trazado de la ruta.');
@@ -72,7 +74,8 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
 
   void _fitJourney() {
     final legs = _legs;
-    if (legs == null) return;
+    // Fitting before the map knows its own size lands on the wrong zoom.
+    if (legs == null || !_mapReady) return;
     final points = <LatLng>[
       widget.origin,
       widget.destination,
@@ -141,6 +144,10 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
       options: MapOptions(
         initialCenter: widget.origin,
         initialZoom: 12,
+        onMapReady: () {
+          _mapReady = true;
+          _fitJourney();
+        },
       ),
       children: [
         MapTileLayer(),
@@ -155,57 +162,64 @@ class _JourneyPreviewScreenState extends State<JourneyPreviewScreen> {
             for (final leg in legs) RouteLines.leg(leg.path),
           ],
         ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: widget.origin,
-              width: 20,
-              height: 20,
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.blue.shade600,
-                  border: Border.all(color: Colors.white, width: 3),
-                ),
-              ),
-            ),
-            for (final leg in legs) ...[
-              Marker(
-                point: leg.originStop.point,
-                width: 26,
-                height: 26,
-                child: _pin(boardingIcon, Colors.green.shade600),
-              ),
-              Marker(
-                point: leg.destinationStop.point,
-                width: 26,
-                height: 26,
-                child: _pin(Icons.flag_rounded, arrivalColor),
-              ),
-            ],
-            Marker(
-              point: widget.destination,
-              width: 36,
-              height: 36,
-              child: const Icon(Icons.location_on, color: arrivalColor, size: 34),
-            ),
-          ],
-        ),
+        DeclutteredPinLayer(placements: _pinPlacements(legs)),
         const MapAttribution(),
       ],
     );
   }
 
-  Widget _pin(IconData icon, Color color) {
-    return Container(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-        border: Border.all(color: Colors.white, width: 2.5),
+  /// The origin dot is dropped when the rider is already standing at the
+  /// first stop: two markers on one corner, and the one that says which bus
+  /// to take is the one worth keeping.
+  static const _sameSpotMeters = 70.0;
+
+  List<PinPlacement> _pinPlacements(List<TransitTripPlan> legs) {
+    const distance = Distance();
+    final first = legs.isEmpty ? null : legs.first.originStop.point;
+    final startsAtStop = first != null &&
+        distance.as(LengthUnit.Meter, widget.origin, first) <= _sameSpotMeters;
+
+    return [
+      if (!startsAtStop)
+        PinPlacement(
+          point: widget.origin,
+          build: (lean) => originPin(lean: lean),
+          preferences: _endpointLeans,
+        ),
+      for (final leg in legs) ...[
+        PinPlacement(
+          point: leg.originStop.point,
+          build: (lean) => routeCodePin(
+            code: leg.routeShortName,
+            boarding: true,
+            lean: lean,
+          ),
+        ),
+        PinPlacement(
+          point: leg.destinationStop.point,
+          build: (lean) => routeCodePin(
+            code: leg.routeShortName,
+            boarding: false,
+            lean: lean,
+          ),
+        ),
+      ],
+      PinPlacement(
+        point: widget.destination,
+        build: (lean) => destinationPin(lean: lean),
+        preferences: _endpointLeans,
       ),
-      child: Icon(icon, size: 13, color: Colors.white),
-    );
+    ];
   }
+
+  /// An endpoint sits on its own spot unless something is already there.
+  static const _endpointLeans = [
+    PinLean.onSpot,
+    PinLean.upLeft,
+    PinLean.upRight,
+    PinLean.downRight,
+    PinLean.downLeft,
+  ];
 
   Widget _buildSteps() {
     final scheme = Theme.of(context).colorScheme;

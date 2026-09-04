@@ -4,58 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import '../services/live_vehicles_feed.dart';
 import '../services/live_vehicles_service.dart';
+import 'map_pins.dart';
 
 /// A bus where the agency last reported it. Pointed when the feed carries a
 /// bearing, so a glance says which way it is heading.
-class LiveBusMarker extends StatelessWidget {
-  final LiveVehicle vehicle;
-  final Color color;
-  final VoidCallback? onTap;
-
-  const LiveBusMarker({
-    super.key,
-    required this.vehicle,
-    required this.color,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bearing = vehicle.bearing;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color,
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 5,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: bearing == null
-            ? const Icon(
-                Icons.directions_bus_rounded,
-                size: 14,
-                color: Colors.white,
-              )
-            : Transform.rotate(
-                angle: bearing * 3.1415926535 / 180,
-                child: const Icon(
-                  Icons.navigation_rounded,
-                  size: 14,
-                  color: Colors.white,
-                ),
-              ),
-      ),
-    );
-  }
-}
-
 List<Marker> liveBusMarkers(
   List<LiveVehicle> vehicles,
   Color color, {
@@ -63,24 +15,32 @@ List<Marker> liveBusMarkers(
 }) {
   return [
     for (final vehicle in vehicles)
-      Marker(
-        point: vehicle.point,
-        // Bigger than the drawn circle so a moving bus is still tappable.
-        width: 40,
-        height: 40,
-        child: Center(
-          child: SizedBox(
-            width: 26,
-            height: 26,
-            child: LiveBusMarker(
-              vehicle: vehicle,
-              color: color,
-              onTap: onTap == null ? null : () => onTap(vehicle),
-            ),
-          ),
-        ),
-      ),
+      _busMarker(vehicle, color, onTap == null ? null : () => onTap(vehicle)),
   ];
+}
+
+/// Buses lean down-right, the mirror of the stops' up-left, so a bus sitting
+/// on top of its own stop is still two distinguishable things.
+Marker _busMarker(LiveVehicle vehicle, Color color, VoidCallback? onTap) {
+  final bearing = vehicle.bearing;
+  // Inverted against the stops on purpose: a bus is a white body with a
+  // coloured bus in it, a stop is a solid slate body. Same map, no confusion.
+  final pin = MapPin(
+    width: 27,
+    height: 27,
+    color: Colors.white,
+    borderColor: color,
+    stemColor: color,
+    lean: PinLean.downRight,
+    onTap: onTap,
+    child: bearing == null
+        ? Icon(Icons.directions_bus_rounded, size: 15, color: color)
+        : Transform.rotate(
+            angle: bearing * 3.1415926535 / 180,
+            child: Icon(Icons.navigation_rounded, size: 15, color: color),
+          ),
+  );
+  return pinMarker(point: vehicle.point, pin: pin);
 }
 
 /// What a tapped bus says about itself: its fleet number, the service it is
