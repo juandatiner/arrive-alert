@@ -44,3 +44,7 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .claude/
+
+# Scratch output of tool/build_transit_data.py; assets/transit is what ships.
+transit_out/
+gtfs/

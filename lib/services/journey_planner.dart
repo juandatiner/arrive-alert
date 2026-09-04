@@ -70,12 +70,18 @@ class JourneyPlanner {
   static double _rideSeconds(TransitKind kind, double meters) =>
       meters / (kind.averageKmh / 3.6);
 
+  /// [on] is the day the rider is travelling, today by default. Services
+  /// that do not run that day are left out entirely rather than ranked down:
+  /// a journey built on a Sunday-only feeder is not a slower option on a
+  /// Tuesday, it is a bus that never comes.
   static Future<List<Journey>> plan({
     required LatLng origin,
     required LatLng destination,
     int limit = 5,
+    DateTime? on,
   }) async {
     final index = await TransitIndexService.load();
+    final weekday = (on ?? DateTime.now()).weekday;
 
     final walkAll = _distance.as(LengthUnit.Meter, origin, destination);
     final journeys = <Journey>[];
@@ -107,8 +113,8 @@ class JourneyPlanner {
     destStops = destStops.take(_maxAccessStops).toList();
 
     // (route, position) -> shortest walk that reaches/leaves it.
-    final boardings = _accessPairs(index, originStops);
-    final alightings = _accessPairs(index, destStops);
+    final boardings = _accessPairs(index, originStops, weekday);
+    final alightings = _accessPairs(index, destStops, weekday);
 
     journeys.addAll(_direct(index, origin, destination, boardings, alightings));
     journeys.addAll(
@@ -171,10 +177,16 @@ class JourneyPlanner {
   static Map<int, double> _accessPairs(
     TransitIndex index,
     List<({int stop, double meters})> stops,
+    int weekday,
   ) {
     final pairs = <int, double>{};
     for (final entry in stops) {
       for (final packed in index.stopRoutes[entry.stop]) {
+        // Every route the planner can reach comes through here, transfers
+        // included, so this is the only place the day has to be checked.
+        if (!index.routes[TransitIndex.routeOf(packed)].runsOn(weekday)) {
+          continue;
+        }
         final current = pairs[packed];
         if (current == null || entry.meters < current) {
           pairs[packed] = entry.meters;

@@ -2,7 +2,8 @@
 
 The per-route files answer "draw route X", but a planner needs the opposite
 lookup - "which routes touch this corner, and how far along each one is that
-stop" - for all 1044 routes at once. Loading 1044 files on a phone to answer
+stop" - for every route at once. Loading eight hundred-odd files on a phone
+to answer
 one query is out, so the whole thing is flattened into a single asset:
 arrays parallel to each route's own stop list, so a (route, stop) pair found
 here maps straight onto RouteMapScreen's stop indices.
@@ -52,7 +53,10 @@ def main():
                 stops.append([stop['n'], stop['lat'], stop['lon']])
             indices.append(idx)
 
-        routes.append([route['id'], route['short'], route['long'], route['kind']])
+        # The weekday bitmask rides along so the planner can drop a
+        # Sunday-only service before it ever proposes it on a Tuesday.
+        routes.append([route['id'], route['short'], route['long'],
+                       route['kind'], route.get('d', 0x7F)])
         route_stops.append(indices)
         route_meters.append(meters)
 

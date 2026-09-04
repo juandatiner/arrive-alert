@@ -23,30 +23,59 @@ class TransitService {
 
   /// Matches on the route code first (what riders actually know - "B13",
   /// "K86"), then falls back to the destination text.
+  ///
+  /// Only services running on [on] (today by default) are returned: a rider
+  /// searching on a Monday has no use for the Sunday-only variant of a code,
+  /// and showing both is what made "M86" come back five times.
   static Future<List<TransitRouteSummary>> search({
     required String query,
     TransitKind? kind,
+    DateTime? on,
   }) async {
     final index = await loadIndex();
+    final weekday = (on ?? DateTime.now()).weekday;
     final q = query.trim().toLowerCase();
-    final pool = kind == null
-        ? index
-        : index.where((r) => r.kind == kind).toList();
-    if (q.isEmpty) return pool.take(60).toList();
+    final pool = [
+      for (final r in index)
+        if ((kind == null || r.kind == kind) && r.schedule.runsOn(weekday)) r,
+    ];
+    if (q.isEmpty) return _byFrequency(pool, weekday).take(60).toList();
 
     final byCode = <TransitRouteSummary>[];
+    final exact = <TransitRouteSummary>[];
     final byName = <TransitRouteSummary>[];
     for (final r in pool) {
       final short = r.shortName.toLowerCase();
       if (short == q) {
-        byCode.insert(0, r);
+        exact.add(r);
       } else if (short.startsWith(q)) {
         byCode.add(r);
       } else if (short.contains(q) || r.longName.toLowerCase().contains(q)) {
         byName.add(r);
       }
     }
-    return [...byCode, ...byName].take(60).toList();
+    return [
+      ..._byFrequency(exact, weekday),
+      ..._byFrequency(byCode, weekday),
+      ..._byFrequency(byName, weekday),
+    ].take(60).toList();
+  }
+
+  /// Codes stay together so a rider comparing "M86" against "MK86" reads two
+  /// blocks rather than an interleaving, and inside a code the service that
+  /// runs most often comes first - its late-night or early-morning sibling
+  /// sits under it, which is the order the rider wants to skim.
+  static List<TransitRouteSummary> _byFrequency(
+    List<TransitRouteSummary> routes,
+    int weekday,
+  ) {
+    final sorted = [...routes];
+    sorted.sort((a, b) {
+      final byCode = a.shortName.compareTo(b.shortName);
+      if (byCode != 0) return byCode;
+      return b.schedule.tripsOn(weekday).compareTo(a.schedule.tripsOn(weekday));
+    });
+    return sorted;
   }
 
   static Future<TransitRoute> loadRoute(String id) async {
@@ -56,7 +85,7 @@ class TransitService {
     final route =
         TransitRoute.fromJson(jsonDecode(raw) as Map<String, dynamic>);
     // Small cache: routes are a few KB each and users bounce between a
-    // handful of them, but there's no reason to hold all 1044.
+    // handful of them, but there's no reason to hold the whole pack.
     if (_routeCache.length > 12) _routeCache.clear();
     _routeCache[id] = route;
     return route;
