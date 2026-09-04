@@ -12,18 +12,11 @@ import '../services/saved_trips_service.dart';
 import '../services/transit_service.dart';
 import '../utils/format.dart';
 import '../widgets/live_bus_marker.dart';
+import '../widgets/map_pins.dart';
 import '../widgets/map_style.dart';
 import '../widgets/route_lines.dart';
 import 'route_picker_sheet.dart' show kindColor;
 import 'trip_screen.dart';
-
-/// Where you get off is drawn like a finish line, not like a warning - red
-/// is the app's colour for the alarm, and the destination is not an alarm.
-const arrivalColor = Color(0xFF1B1B1F);
-
-/// Where you get on. Deliberately not a bus: the live buses on the same map
-/// are bus icons, and two of them meant nothing.
-const boardingIcon = Icons.login_rounded;
 
 /// Draws one route exactly as the agency publishes it and lets the rider tap
 /// the stop they board at and the stop they get off at.
@@ -58,6 +51,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
   bool _isSaved = false;
 
   List<LiveVehicle> _liveVehicles = const [];
+  bool _mapReady = false;
   StreamSubscription<List<LiveVehicle>>? _liveSub;
   final _liveSnack = LiveBusSnackController();
 
@@ -115,7 +109,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       if (!mounted) return;
       setState(() => _route = route);
       _startLiveVehicles(route.id);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _fitRoute());
+      _fitRoute();
       _refreshSavedState();
     } catch (e) {
       if (!mounted) return;
@@ -162,23 +156,54 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       final pos = await LocationService.getCurrentPosition();
       if (!mounted) return;
       setState(() => _myLocation = LatLng(pos.latitude, pos.longitude));
+      if (_originStop == null && _destinationStop == null) _fitRoute();
     } catch (_) {
       // Location is a convenience here (suggesting the nearest stop), not a
       // requirement - the rider can always pick both stops by hand.
     }
   }
 
+  /// How many stops either side of the rider are worth framing when a route
+  /// is opened with nothing picked yet.
+  static const _nearbyStops = 3;
+
   void _fitRoute() {
     final route = _route;
-    if (route == null || route.shape.isEmpty) return;
-    // Opening a saved leg should frame that leg, not the whole line it sits on.
+    if (route == null || route.shape.isEmpty || !_mapReady) return;
+    // Opening a saved leg should frame that leg, not the whole line it sits
+    // on; opening a bare route should frame the part of it the rider is
+    // standing next to, because a troncal fitted whole is just Bogota with a
+    // thin line on it.
     final leg = _legPath;
+    final points = leg.isNotEmpty ? leg : _framePoints(route);
+    if (points.length < 2) return;
     _mapController.fitCamera(
       CameraFit.bounds(
-        bounds: LatLngBounds.fromPoints(leg.isEmpty ? route.shape : leg),
+        bounds: LatLngBounds.fromPoints(points),
         padding: const EdgeInsets.fromLTRB(40, 60, 40, 220),
       ),
     );
+  }
+
+  List<LatLng> _framePoints(TransitRoute route) {
+    final me = _myLocation;
+    if (me == null) return route.shape;
+    const distance = Distance();
+    var nearest = 0;
+    var nearestMeters = double.infinity;
+    for (var i = 0; i < route.stops.length; i++) {
+      final meters = distance.as(LengthUnit.Meter, route.stops[i].point, me);
+      if (meters < nearestMeters) {
+        nearestMeters = meters;
+        nearest = i;
+      }
+    }
+    final from = (nearest - _nearbyStops).clamp(0, route.stops.length - 1);
+    final to = (nearest + _nearbyStops).clamp(0, route.stops.length - 1);
+    return [
+      me,
+      for (var i = from; i <= to; i++) route.stops[i].point,
+    ];
   }
 
   DateTime? _lastStopTapAt;
@@ -309,6 +334,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           options: MapOptions(
             initialCenter: route.shape.first,
             initialZoom: 12,
+            onMapReady: () {
+              _mapReady = true;
+              _fitRoute();
+            },
           ),
           children: [
             MapTileLayer(),
@@ -337,6 +366,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
                 ),
               ),
             ),
+            DeclutteredPinLayer(placements: _selectedPinPlacements(route)),
             const MapAttribution(),
           ],
         ),
@@ -361,8 +391,10 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     );
   }
 
+  /// Plain stops are beads on the line: no stem, sitting exactly where the
+  /// route runs. Only the two the rider picked lean off it, and those are
+  /// placed by [DeclutteredPinLayer] so they never cover each other.
   List<Marker> _buildStopMarkers(TransitRoute route, Color color) {
-    final markers = <Marker>[];
     final origin = _originStop;
     final destination = _destinationStop;
     final lo = origin != null && destination != null
@@ -372,53 +404,15 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
         ? (origin < destination ? destination : origin)
         : null;
 
+    final markers = <Marker>[];
     for (var i = 0; i < route.stops.length; i++) {
-      final isOrigin = i == origin;
-      final isDestination = i == destination;
-      final selected = isOrigin || isDestination;
-      // Stops off the leg stay tappable - that is how the rider extends or
-      // moves the selection - but they fade so the leg is what reads.
+      if (i == origin || i == destination) continue;
       final offLeg = lo != null && (i < lo || i > hi!);
-
       markers.add(
-        Marker(
+        pinMarker(
           point: route.stops[i].point,
-          width: selected ? 32 : 14,
-          height: selected ? 32 : 14,
-          child: GestureDetector(
-            onTap: () => _onStopTapped(i),
-            child: Opacity(
-              opacity: offLeg ? 0.35 : 1,
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isOrigin
-                      ? Colors.green.shade600
-                      : isDestination
-                          ? arrivalColor
-                          : Colors.white,
-                  border: Border.all(
-                    color: selected ? Colors.white : color,
-                    width: selected ? 3 : 2.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: selected
-                    ? Icon(
-                        isOrigin ? boardingIcon : Icons.flag_rounded,
-                        size: 17,
-                        color: Colors.white,
-                      )
-                    : null,
-              ),
-            ),
-          ),
+          pin: stopPin(size: 15, onTap: () => _onStopTapped(i)),
+          opacity: offLeg ? 0.35 : 1,
         ),
       );
     }
@@ -439,6 +433,24 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       );
     }
     return markers;
+  }
+
+  List<PinPlacement> _selectedPinPlacements(TransitRoute route) {
+    return [
+      for (final entry in [
+        if (_originStop != null) (index: _originStop!, boarding: true),
+        if (_destinationStop != null) (index: _destinationStop!, boarding: false),
+      ])
+        PinPlacement(
+          point: route.stops[entry.index].point,
+          build: (lean) => routeCodePin(
+            code: route.shortName,
+            boarding: entry.boarding,
+            lean: lean,
+            onTap: () => _onStopTapped(entry.index),
+          ),
+        ),
+    ];
   }
 
   Widget _buildBottomCard(TransitRoute route) {
@@ -473,7 +485,7 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           const SizedBox(height: 10),
           _buildStopLine(
             icon: boardingIcon,
-            color: Colors.green.shade600,
+            color: boardingColor,
             label: origin == null
                 ? 'Toca en el mapa donde te subes'
                 : route.stops[origin].name,
@@ -481,8 +493,8 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
           ),
           const SizedBox(height: 6),
           _buildStopLine(
-            icon: Icons.flag_rounded,
-            color: arrivalColor,
+            icon: alightIcon,
+            color: alightColor,
             label: destination == null
                 ? 'Ahora toca donde te bajas'
                 : route.stops[destination].name,

@@ -10,17 +10,20 @@ import 'package:latlong2/latlong.dart';
 /// the leg is thick and carries a white casing that lifts it off whatever it
 /// crosses - including the context line itself.
 class RouteLines {
-  /// The stretch the rider travels gets its own colour rather than a
+  /// The stretch the rider actually travels gets its own colour rather than a
   /// thicker version of the service's. Sharing the colour meant the leg and
   /// the route it sits on read as one line; orange belongs to no service
   /// (red troncal, green alimentador, blue zonal, purple cable) so it can
   /// only mean "this part is yours".
   static const legColor = Color(0xFFFF6D00);
 
-  static const _contextWidth = 3.5;
-  static const _contextAlpha = 0.28;
-  static const _legWidth = 7.0;
-  static const _casingWidth = 3.0;
+  /// The full route is a thin thread in the service's colour: present enough
+  /// to say where the bus goes, never loud enough to compete with the leg.
+  static const _contextWidth = 3.0;
+  static const _contextAlpha = 0.45;
+
+  static const _legWidth = 6.0;
+  static const _casingWidth = 2.5;
 
   /// The full route, as background. Never the thing the eye lands on.
   static Polyline context(List<LatLng> points, Color color) => Polyline(
@@ -53,7 +56,7 @@ class RouteLines {
   /// The part of the leg already behind the rider.
   static Polyline travelled(List<LatLng> points) => Polyline(
         points: points,
-        strokeWidth: _legWidth - 1,
+        strokeWidth: _legWidth - 0.5,
         color: Colors.grey.shade500,
         borderStrokeWidth: _casingWidth,
         borderColor: Colors.white,
@@ -61,13 +64,17 @@ class RouteLines {
         strokeJoin: StrokeJoin.round,
       );
 
-  /// Walking, which the app does not route - a straight hint, not a claim
-  /// about which streets to take.
+  /// Walking, in blue and dotted. Dotted because the app does not route on
+  /// foot - it is a hint at the connection, not a claim about which streets
+  /// to take - and blue because no bus service is that colour at this
+  /// weight.
+  static const walkColor = Color(0xFF1E88E5);
+
   static Polyline walk(List<LatLng> points) => Polyline(
         points: points,
-        strokeWidth: 3,
-        color: Colors.grey.shade600,
-        pattern: StrokePattern.dotted(spacingFactor: 2.2),
+        strokeWidth: 3.5,
+        color: walkColor,
+        pattern: StrokePattern.dotted(spacingFactor: 2.4),
         strokeCap: StrokeCap.round,
       );
 }

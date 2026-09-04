@@ -19,9 +19,9 @@ import '../services/settings_service.dart';
 import '../utils/format.dart';
 import '../utils/path_geometry.dart';
 import '../widgets/live_bus_marker.dart';
+import '../widgets/map_pins.dart';
 import '../widgets/map_style.dart';
 import '../widgets/route_lines.dart';
-import 'route_map_screen.dart' show arrivalColor;
 import 'route_picker_sheet.dart' show kindColor;
 
 class TripScreen extends StatefulWidget {
@@ -821,6 +821,8 @@ class _TripScreenState extends State<TripScreen>
                   MapTileLayer(),
                   PolylineLayer(polylines: _buildPolylines(route)),
                   MarkerLayer(markers: _buildMarkers(origin)),
+                  if (_isTransit)
+                    DeclutteredPinLayer(placements: _legPinPlacements()),
                   const MapAttribution(),
                 ],
               ),
@@ -990,67 +992,26 @@ class _TripScreenState extends State<TripScreen>
     ];
 
     if (!_isTransit) {
-      markers.add(
-        Marker(
-          point: widget.destination,
-          width: 40,
-          height: 40,
-          child: const Icon(Icons.location_on, color: arrivalColor, size: 40),
-        ),
-      );
+      markers.add(pinMarker(point: widget.destination, pin: destinationPin()));
       return markers;
     }
 
     final leg = _leg;
     final color = kindColor(leg.kind);
+    // Plain stops are beads on the line; the two that matter are placed by
+    // the decluttering layer so they never cover each other.
     for (var i = 0; i < leg.stops.length; i++) {
+      if (i == 0 || i == _alightIndex) continue;
       final passed = leg.stopPathIndices[i] <= _passedIndex;
-      final isAlight = i == _alightIndex;
-      // Past the chosen stop there is no drawn line any more, so those stops
-      // fade - but stay tappable, which is how the rider moves their stop
-      // further along again.
-      final beyond = i > _alightIndex;
       markers.add(
-        Marker(
+        pinMarker(
           point: leg.stops[i].point,
-          width: isAlight ? 32 : 15,
-          height: isAlight ? 32 : 15,
-          child: GestureDetector(
+          pin: stopPin(
+            size: 15,
+            color: passed ? Colors.grey.shade400 : stopColor,
             onTap: () => _onStopTapped(i),
-            child: Opacity(
-              opacity: beyond ? 0.3 : 1,
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isAlight
-                      ? arrivalColor
-                      : passed
-                          ? Colors.grey.shade400
-                          : Colors.white,
-                  border: Border.all(
-                    color: isAlight
-                        ? Colors.white
-                        : passed
-                            ? Colors.grey.shade500
-                            : color,
-                    width: isAlight ? 3 : 2.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color:
-                          Colors.black.withValues(alpha: passed ? 0.12 : 0.25),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: isAlight
-                    ? const Icon(Icons.flag_rounded,
-                        size: 17, color: Colors.white)
-                    : null,
-              ),
-            ),
           ),
+          opacity: i > _alightIndex ? 0.3 : 1,
         ),
       );
     }
@@ -1065,6 +1026,30 @@ class _TripScreenState extends State<TripScreen>
       ),
     ));
     return markers;
+  }
+
+  List<PinPlacement> _legPinPlacements() {
+    final leg = _leg;
+    return [
+      PinPlacement(
+        point: leg.stops.first.point,
+        build: (lean) => routeCodePin(
+          code: leg.routeShortName,
+          boarding: true,
+          lean: lean,
+          onTap: () => _onStopTapped(0),
+        ),
+      ),
+      PinPlacement(
+        point: _alightStop.point,
+        build: (lean) => routeCodePin(
+          code: leg.routeShortName,
+          boarding: false,
+          lean: lean,
+          onTap: () => _onStopTapped(_alightIndex),
+        ),
+      ),
+    ];
   }
 
   Widget _thresholdChip(String label, bool done, {bool accent = false}) {
