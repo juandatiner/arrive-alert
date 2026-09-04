@@ -465,9 +465,29 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     ];
   }
 
-  static String? _todaysHours(TransitRoute route) {
-    final window = route.schedule.windowFor(DateTime.now().weekday);
-    return window == null ? null : 'Hoy ${window.label}';
+  /// Today's hours, and whether buses are leaving right now. A route opened
+  /// at 21:40 whose last bus went at 21:03 has to say so before the rider
+  /// sets an alarm on it.
+  static ({String text, bool running})? _todaysHours(TransitRoute route) {
+    final now = route.schedule.statusAt(DateTime.now());
+    final window = now.window;
+    if (window == null) return null;
+    switch (now.status) {
+      case ServiceStatus.running:
+        return (text: 'Hoy ${window.label}', running: true);
+      case ServiceStatus.notYet:
+        return (
+          text: 'Hoy ${window.label} · empieza a las ${window.firstClock}',
+          running: false,
+        );
+      case ServiceStatus.finished:
+        return (
+          text: 'Hoy ${window.label} · ya terminó',
+          running: false,
+        );
+      case ServiceStatus.unknown:
+        return null;
+    }
   }
 
   Widget _buildBottomCard(TransitRoute route) {
@@ -499,14 +519,36 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
-          // Today's hours, because a route opened at 21:40 that stopped
-          // running at 21:03 is worth saying out loud before the rider sets
-          // an alarm on it.
           if (_todaysHours(route) case final hours?) ...[
             const SizedBox(height: 3),
-            Text(
-              hours,
-              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+            Row(
+              children: [
+                Icon(
+                  hours.running
+                      ? Icons.schedule_rounded
+                      : Icons.do_not_disturb_on_outlined,
+                  size: 13,
+                  color: hours.running
+                      ? Colors.grey.shade600
+                      : scheme.error.withValues(alpha: 0.75),
+                ),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    hours.text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight:
+                          hours.running ? FontWeight.w400 : FontWeight.w600,
+                      color: hours.running
+                          ? Colors.grey.shade600
+                          : scheme.error.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 10),

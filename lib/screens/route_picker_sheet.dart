@@ -364,65 +364,100 @@ class _RoutePickerSheetState extends State<_RoutePickerSheet> {
   /// Stop count plus today's hours, so a rider searching at 21:30 can see at
   /// a glance which of two same-code services is still running. The hours are
   /// dropped rather than faked when the bundled pack predates them.
-  static String _subtitle(TransitRouteSummary route) {
+  static String _subtitle(TransitRouteSummary route, ServiceWindow? window) {
     final stops = '${route.stopCount} paraderos';
-    final window = route.schedule.windowFor(DateTime.now().weekday);
     return window == null ? stops : '$stops  ·  ${window.label}';
   }
 
+  /// What a service that is not running right now is waiting for. M86 runs
+  /// 22:10-23:00, so for most of the day the useful thing to say is not its
+  /// hours but that it has not started.
+  static String? _statusNote(ServiceStatus status, ServiceWindow? window) {
+    switch (status) {
+      case ServiceStatus.notYet:
+        return 'Desde las ${window!.firstClock}';
+      case ServiceStatus.finished:
+        return 'Terminó a las ${window!.lastClock}';
+      case ServiceStatus.running:
+      case ServiceStatus.unknown:
+        return null;
+    }
+  }
+
   Widget _buildRouteRow(TransitRouteSummary route, ColorScheme scheme) {
+    final now = route.schedule.statusAt(DateTime.now());
+    final note = _statusNote(now.status, now.window);
+    // Still tappable: a rider can plan the last bus home at six in the
+    // evening. Dimmed, because the one thing they must not do is walk to the
+    // stop expecting it now.
+    final dimmed = note != null;
+
     return InkWell(
       onTap: () =>
           Navigator.of(context).pop(RoutePickerResult(summary: route)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            Container(
-              width: 58,
-              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-              decoration: BoxDecoration(
-                color: _kindColor(route.kind).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              // Codes run from "2" to "M86-K86", so shrink rather than clip:
-              // the code is the whole point of the row.
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  route.shortName,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: _kindColor(route.kind),
+      child: Opacity(
+        opacity: dimmed ? 0.45 : 1,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 58,
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                decoration: BoxDecoration(
+                  color: _kindColor(route.kind).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                // Codes run from "2" to "M86-K86", so shrink rather than clip:
+                // the code is the whole point of the row.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    route.shortName,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: _kindColor(route.kind),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    route.longName,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _subtitle(route),
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                  ),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      route.longName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13.5, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _subtitle(route, now.window),
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                    if (note != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        note,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-            Icon(Icons.chevron_right, color: Colors.grey.shade400),
-          ],
+              Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            ],
+          ),
         ),
       ),
     );

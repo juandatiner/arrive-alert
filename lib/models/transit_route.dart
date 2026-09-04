@@ -73,6 +73,32 @@ class ServiceWindow {
   }
 
   String get label => '${_clock(firstMinute)} - ${_clock(lastMinute)}';
+
+  String get firstClock => _clock(firstMinute);
+
+  String get lastClock => _clock(lastMinute);
+
+  /// Whether a bus is leaving within this window at [minute] of the day.
+  ///
+  /// A window that runs to "00:30" is stored as 1470, past the end of its own
+  /// day, so a service still going in the small hours is asked about with
+  /// [minute] pushed a day forward - see [RouteSchedule.statusAt].
+  bool covers(int minute) => minute >= firstMinute && minute <= lastMinute;
+}
+
+/// Where a service stands relative to right now.
+enum ServiceStatus {
+  /// Buses are leaving.
+  running,
+
+  /// Runs today, but the first bus has not left yet - M86 starts at 22:10.
+  notYet,
+
+  /// Ran today and is done.
+  finished,
+
+  /// Hours unknown, which is what a pack built before schedules gives.
+  unknown,
 }
 
 /// The days a route runs and its hours on each of them.
@@ -132,6 +158,36 @@ class RouteSchedule {
 
   /// How often the route runs on [weekday], for ranking same-code services.
   int tripsOn(int weekday) => windowFor(weekday)?.trips ?? 0;
+
+  /// Where this service stands at [now], and the window that decided it.
+  ///
+  /// Yesterday is consulted too: a route whose last bus leaves at "00:30" is
+  /// still running at ten past midnight, and by then [DateTime.weekday] has
+  /// already moved on.
+  ({ServiceStatus status, ServiceWindow? window}) statusAt(DateTime now) {
+    final minute = now.hour * 60 + now.minute;
+
+    final yesterday = windowFor(now.weekday == DateTime.monday
+        ? DateTime.sunday
+        : now.weekday - 1);
+    if (yesterday != null && yesterday.covers(minute + Duration.minutesPerDay)) {
+      return (status: ServiceStatus.running, window: yesterday);
+    }
+
+    final today = windowFor(now.weekday);
+    if (today == null) {
+      return (status: ServiceStatus.unknown, window: null);
+    }
+    if (today.covers(minute)) {
+      return (status: ServiceStatus.running, window: today);
+    }
+    return (
+      status: minute < today.firstMinute
+          ? ServiceStatus.notYet
+          : ServiceStatus.finished,
+      window: today,
+    );
+  }
 }
 
 /// One row of the bundled route index - enough to search and list, without
