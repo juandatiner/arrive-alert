@@ -43,6 +43,11 @@ class JourneyPlanner {
   /// hops, the way Maps does.
   static const _walkOnlyMeters = 1400.0;
 
+  /// Under half a kilometre, no bus is worth it: the walk is over before the
+  /// service turns up. Below this the planner offers walking and nothing
+  /// else, and no single ride shorter than this is ever suggested.
+  static const _minimumRideMeters = 500.0;
+
   static const _maxAccessStops = 24;
   static const _maxJoinCandidates = 1500;
 
@@ -85,6 +90,8 @@ class JourneyPlanner {
         ),
       ]));
     }
+    // Too close to be a bus trip at all.
+    if (walkAll < _minimumRideMeters) return journeys;
 
     var originStops = index.stopsNear(origin, _accessWalkMeters);
     if (originStops.isEmpty) {
@@ -106,6 +113,11 @@ class JourneyPlanner {
     journeys.addAll(_direct(index, origin, destination, boardings, alightings));
     journeys.addAll(
       _oneTransfer(index, origin, destination, boardings, alightings),
+    );
+
+    // A ride of a couple of blocks is not a recommendation, it is noise.
+    journeys.removeWhere(
+      (journey) => journey.rides.any((r) => r.meters < _minimumRideMeters),
     );
 
     // Two options that differ only by which bay of a station they board at

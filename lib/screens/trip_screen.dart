@@ -975,7 +975,7 @@ class _TripScreenState extends State<TripScreen>
       // read as part of the trip.
       if (passed > 0) RouteLines.travelled(leg.path.sublist(0, passed + 1)),
       if (alightPathIndex > passed)
-        RouteLines.leg(leg.path.sublist(passed, alightPathIndex + 1), color),
+        RouteLines.leg(leg.path.sublist(passed, alightPathIndex + 1)),
     ];
   }
 
@@ -1055,7 +1055,15 @@ class _TripScreenState extends State<TripScreen>
       );
     }
 
-    markers.addAll(liveBusMarkers(_liveVehicles, color));
+    markers.addAll(liveBusMarkers(
+      _liveVehicles,
+      color,
+      onTap: (vehicle) => showLiveBusDetails(
+        context,
+        vehicle,
+        routeShortName: leg.routeShortName,
+      ),
+    ));
     return markers;
   }
 

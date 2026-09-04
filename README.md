@@ -16,10 +16,12 @@ sonar una alarma antes de que te pases la parada.
   acercamiento y suena) o *Buscar ruta de bus*, que calcula que servicios de
   TransMilenio/SITP sirven, con transbordo cuando hace falta, y muestra las
   opciones ordenadas por tiempo puerta a puerta.
-- **La ruta no desaparece al arrancar** — durante el viaje se dibuja el tramo
-  completo: gris lo ya recorrido, en color lo que falta, con todos los
-  paraderos visibles. Tocar uno adelante cambia donde te bajas y recalcula
-  los avisos.
+- **La ruta no desaparece al arrancar** — durante el viaje se dibuja el
+  recorrido completo del bus tenue, y encima tu tramo en naranja: gris lo ya
+  recorrido, naranja lo que falta, con todos los paraderos visibles. Tocar
+  uno adelante cambia donde te bajas y recalcula los avisos.
+- **Nada de buses para media cuadra** — bajo 500 m la app solo propone
+  caminar, y no sugiere ningun tramo en bus mas corto que eso.
 - **Ruta y tiempo estimado** — calculados con [OSRM](http://project-osrm.org/)
   sobre la red vial real, con un margen extra para tráfico urbano.
 - **Avisos escalonados** — primer aviso, segundo aviso (opcional) y alarma
@@ -209,11 +211,14 @@ cerca tuyo).
 (lo mismo que publica la agencia) y reparte el resultado a todas las
 pantallas por un stream.
 
-**Solo baja cuando el usuario esta viendo una ruta.** El worker arranca al
-abrir el mapa de una ruta, la vista previa de un viaje o el viaje en curso, y
-se apaga solo cuando la ultima de esas pantallas se cierra o la app pasa a
-segundo plano. En el mapa principal, la busqueda de destino o los ajustes no
-se descarga nada.
+**Solo baja cuando el usuario elige ver una ruta.** El worker arranca al
+abrir el mapa de una ruta o el viaje en curso, y se apaga cuando esas
+pantallas se cierran o la app pasa a segundo plano. La pantalla de opciones
+y la vista previa de un viaje **no** traen buses: ahi la app solo recomienda,
+y los buses aparecen cuando la persona dice cual ruta quiere ver.
+
+Tocar un bus dice su numero de flota, que servicio corre y hace cuanto
+reporto su posicion.
 
 Si una consulta se demora mas de 1.2 s sin nada que mostrar aun, aparece un
 snack gris y pequeno ("Buscando buses...") por encima de la tarjeta inferior;

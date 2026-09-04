@@ -71,13 +71,29 @@ void main() {
     }
   });
 
-  test('walking wins over taking a bus two blocks', () async {
+  test('a walk of two blocks is not offered as a bus trip', () async {
     final journeys = await JourneyPlanner.plan(
       origin: _chapinero,
       destination: _twoBlocksFromChapinero,
     );
-    expect(journeys.first.rides, isEmpty);
-    expect(journeys.first.legs.single, isA<WalkLeg>());
+    expect(journeys, hasLength(1));
+    expect(journeys.single.legs.single, isA<WalkLeg>());
+  });
+
+  test('no suggested ride is shorter than the walk it replaces', () async {
+    for (final pair in [
+      [_chapinero, _universidadNacional],
+      [_portalNorte, _portalSur],
+    ]) {
+      final journeys =
+          await JourneyPlanner.plan(origin: pair[0], destination: pair[1]);
+      for (final journey in journeys) {
+        for (final ride in journey.rides) {
+          expect(ride.meters, greaterThanOrEqualTo(500),
+              reason: '${ride.routeShortName} rides only ${ride.meters} m');
+        }
+      }
+    }
   });
 
   test('a planned ride maps onto the drawn route it came from', () async {

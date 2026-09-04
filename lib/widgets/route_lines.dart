@@ -10,6 +10,13 @@ import 'package:latlong2/latlong.dart';
 /// the leg is thick and carries a white casing that lifts it off whatever it
 /// crosses - including the context line itself.
 class RouteLines {
+  /// The stretch the rider travels gets its own colour rather than a
+  /// thicker version of the service's. Sharing the colour meant the leg and
+  /// the route it sits on read as one line; orange belongs to no service
+  /// (red troncal, green alimentador, blue zonal, purple cable) so it can
+  /// only mean "this part is yours".
+  static const legColor = Color(0xFFFF6D00);
+
   static const _contextWidth = 3.5;
   static const _contextAlpha = 0.28;
   static const _legWidth = 7.0;
@@ -31,11 +38,12 @@ class RouteLines {
         strokeCap: StrokeCap.round,
       );
 
-  /// Where the rider boards to where they get off.
-  static Polyline leg(List<LatLng> points, Color color) => Polyline(
+  /// Where the rider boards to where they get off, in [legColor] over
+  /// whatever service colour runs underneath.
+  static Polyline leg(List<LatLng> points) => Polyline(
         points: points,
         strokeWidth: _legWidth,
-        color: color,
+        color: legColor,
         borderStrokeWidth: _casingWidth,
         borderColor: Colors.white,
         strokeCap: StrokeCap.round,
