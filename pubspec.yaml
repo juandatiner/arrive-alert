@@ -91,6 +91,7 @@ flutter:
   assets:
     - assets/sounds/alarm.wav
     - assets/transit/routes_index.json
+    - assets/transit/planner.json
     - assets/transit/version.json
     - assets/transit/routes/
 
