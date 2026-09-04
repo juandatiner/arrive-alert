@@ -20,19 +20,28 @@ class PlannerRoute {
   final String longName;
   final TransitKind kind;
 
+  /// Which weekdays this service runs, bit 0 for Monday - see
+  /// [RouteSchedule]. Kept as the raw mask because the planner only ever
+  /// asks the one question.
+  final int dayMask;
+
   const PlannerRoute({
     required this.id,
     required this.shortName,
     required this.longName,
     required this.kind,
+    this.dayMask = 0x7F,
   });
+
+  /// [weekday] is [DateTime.weekday]: Monday is 1, Sunday is 7.
+  bool runsOn(int weekday) => dayMask >> (weekday - 1) & 1 == 1;
 }
 
 /// The whole network flattened into lookup tables: which routes touch a
 /// stop, and how far along each route that stop sits.
 ///
 /// The per-route asset files answer "draw route X"; this answers the
-/// opposite question over all 1044 routes at once, which is what a journey
+/// opposite question over every bundled route at once, which is what a journey
 /// planner needs. Built offline by tool/build_planner_index.py, and the
 /// stop positions here are parallel to each route's own stop list, so an
 /// index found on this side can be handed straight to [RouteMapScreen].
@@ -132,6 +141,7 @@ class TransitIndexService {
               shortName: r[1] as String,
               longName: r[2] as String,
               kind: transitKindFromKey(r[3] as String),
+              dayMask: r.length > 4 ? r[4] as int : 0x7F,
             ))
         .toList();
     final stops = (json['stops'] as List)

@@ -48,6 +48,92 @@ extension TransitKindLabel on TransitKind {
   }
 }
 
+/// One day's service: when the first bus leaves the route's first stop, when
+/// the last one does, and how many run in between.
+///
+/// Minutes are counted from midnight and may run past it - the agency
+/// publishes a last departure of "00:30" as 24:30, and a rider reading
+/// "18:43 - 00:30" needs the second number to still mean the small hours.
+class ServiceWindow {
+  final int firstMinute;
+  final int lastMinute;
+  final int trips;
+
+  const ServiceWindow({
+    required this.firstMinute,
+    required this.lastMinute,
+    required this.trips,
+  });
+
+  static String _clock(int minute) {
+    final hour = (minute ~/ 60) % 24;
+    final minutes = minute % 60;
+    return '${hour.toString().padLeft(2, '0')}:'
+        '${minutes.toString().padLeft(2, '0')}';
+  }
+
+  String get label => '${_clock(firstMinute)} - ${_clock(lastMinute)}';
+}
+
+/// The days a route runs and its hours on each of them.
+///
+/// TransMilenio publishes one `route_id` per direction *and* per slice of the
+/// day, all under the same code: "MK86" is one id from 04:30 to 21:03 and
+/// another from 21:13 to 22:00. tool/build_transit_data.py folds the ones a
+/// busier sibling already covers into it and keeps the rest, so what is left
+/// is the set of genuinely catchable services - which only makes sense if
+/// the app then shows the rider the ones running on the day they are asking
+/// about.
+class RouteSchedule {
+  /// Bit 0 is Monday, bit 6 is Sunday - the order [DateTime.weekday] uses,
+  /// one-indexed there and zero-indexed here.
+  final int dayMask;
+
+  /// One window per set bit in [dayMask], in day order.
+  final List<ServiceWindow> windows;
+
+  const RouteSchedule({required this.dayMask, required this.windows});
+
+  /// What a pack built before schedules existed gets: runs every day, hours
+  /// unknown. Better than hiding every route on a stale bundle.
+  static const always = RouteSchedule(dayMask: 0x7F, windows: []);
+
+  factory RouteSchedule.fromJson(Map<String, dynamic> json) {
+    final mask = json['d'] as int?;
+    if (mask == null) return always;
+    return RouteSchedule(
+      dayMask: mask,
+      windows: [
+        for (final w in (json['h'] as List? ?? []))
+          ServiceWindow(
+            firstMinute: (w as List)[0] as int,
+            lastMinute: w[1] as int,
+            trips: w[2] as int,
+          ),
+      ],
+    );
+  }
+
+  /// [weekday] is [DateTime.weekday]: Monday is 1, Sunday is 7.
+  bool runsOn(int weekday) => dayMask >> (weekday - 1) & 1 == 1;
+
+  /// The service on [weekday], or null when the route does not run that day
+  /// (or when the bundle predates schedules).
+  ServiceWindow? windowFor(int weekday) {
+    if (!runsOn(weekday)) return null;
+    // Windows are stored per set bit in day order, so the slot is the number
+    // of days set below this one.
+    var slot = 0;
+    for (var day = 0; day < weekday - 1; day++) {
+      if (dayMask >> day & 1 == 1) slot++;
+    }
+    return slot < windows.length ? windows[slot] : null;
+  }
+
+  /// How often the route runs on [weekday], for ranking same-code services.
+  int tripsOn(int weekday) => windowFor(weekday)?.trips ?? 0;
+}
+
 /// One row of the bundled route index - enough to search and list, without
 /// paying to parse the route's full geometry.
 class TransitRouteSummary {
@@ -56,6 +142,7 @@ class TransitRouteSummary {
   final String longName;
   final TransitKind kind;
   final int stopCount;
+  final RouteSchedule schedule;
 
   const TransitRouteSummary({
     required this.id,
@@ -63,6 +150,7 @@ class TransitRouteSummary {
     required this.longName,
     required this.kind,
     required this.stopCount,
+    this.schedule = RouteSchedule.always,
   });
 
   factory TransitRouteSummary.fromJson(Map<String, dynamic> json) {
@@ -72,6 +160,7 @@ class TransitRouteSummary {
       longName: json['l'] as String,
       kind: transitKindFromKey(json['k'] as String),
       stopCount: json['n'] as int,
+      schedule: RouteSchedule.fromJson(json),
     );
   }
 }
@@ -178,6 +267,10 @@ class TransitRoute {
   final List<int> stopShapeIndices;
   final List<double> stopMeters;
 
+  /// The days and hours this particular service runs - see [RouteSchedule]
+  /// for why one route code carries several of them.
+  final RouteSchedule schedule;
+
   List<double>? _cumulativeCache;
 
   TransitRoute({
@@ -189,6 +282,7 @@ class TransitRoute {
     required this.stops,
     required this.stopShapeIndices,
     required this.stopMeters,
+    this.schedule = RouteSchedule.always,
   });
 
   factory TransitRoute.fromJson(Map<String, dynamic> json) {
@@ -209,6 +303,7 @@ class TransitRoute {
       stopShapeIndices: (json['si'] as List).cast<int>(),
       stopMeters:
           (json['sm'] as List).map((m) => (m as num).toDouble()).toList(),
+      schedule: RouteSchedule.fromJson(json),
     );
   }
 

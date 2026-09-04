@@ -16,8 +16,15 @@ void main() {
 
   test('the planner index covers the whole bundled network', () async {
     final index = await TransitIndexService.load();
-    expect(index.routes.length, 1044);
-    expect(index.stops.length, 8172);
+    // Counted against the shipped index rather than a frozen number: the
+    // pack is rebuilt from a new GTFS feed every few weeks and the route
+    // count moves with it, but the planner has to carry every route the
+    // picker can offer.
+    final shipped = await TransitService.loadIndex();
+    expect(index.routes.length, shipped.length);
+    expect(index.routes.map((r) => r.id).toSet(),
+        shipped.map((r) => r.id).toSet());
+    expect(index.stops.length, greaterThan(7000));
     expect(index.routeStops.length, index.routes.length);
     expect(index.routeMeters.length, index.routes.length);
     for (var r = 0; r < index.routes.length; r++) {
@@ -126,7 +133,14 @@ void main() {
   });
 
   test('every leg of every route starts and ends on its two stops', () async {
-    for (final id in ['10039', '12151', '12237', '12083', '10082']) {
+    // Taken from the shipped index rather than hard-coded: a rebuild folds
+    // same-code services into their busier sibling, so any given route id
+    // may not survive the next feed.
+    final shipped = await TransitService.loadIndex();
+    final sample = [
+      for (var i = 0; i < 5; i++) shipped[i * (shipped.length ~/ 5)].id,
+    ];
+    for (final id in sample) {
       final route = await TransitService.loadRoute(id);
       final last = route.stops.length - 1;
       for (final pair in [[0, last], [0, 1], [last ~/ 3, last], [2, last - 1]]) {

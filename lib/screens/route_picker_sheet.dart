@@ -361,6 +361,15 @@ class _RoutePickerSheetState extends State<_RoutePickerSheet> {
     );
   }
 
+  /// Stop count plus today's hours, so a rider searching at 21:30 can see at
+  /// a glance which of two same-code services is still running. The hours are
+  /// dropped rather than faked when the bundled pack predates them.
+  static String _subtitle(TransitRouteSummary route) {
+    final stops = '${route.stopCount} paraderos';
+    final window = route.schedule.windowFor(DateTime.now().weekday);
+    return window == null ? stops : '$stops  ·  ${window.label}';
+  }
+
   Widget _buildRouteRow(TransitRouteSummary route, ColorScheme scheme) {
     return InkWell(
       onTap: () =>
@@ -406,7 +415,7 @@ class _RoutePickerSheetState extends State<_RoutePickerSheet> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${route.stopCount} paraderos',
+                    _subtitle(route),
                     style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                   ),
                 ],

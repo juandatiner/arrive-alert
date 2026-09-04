@@ -113,7 +113,19 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
       _refreshSavedState();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = 'No se pudo cargar la ruta.');
+      // A favourite can outlive its route: every data pack folds the
+      // same-code services a busier sibling already covers into it, so an id
+      // saved months ago may simply not ship any more. Saying so beats a
+      // generic failure the rider would retry forever.
+      final index = await TransitService.loadIndex().catchError(
+          (_) => const <TransitRouteSummary>[]);
+      if (!mounted) return;
+      final gone = index.isNotEmpty &&
+          !index.any((r) => r.id == widget.summary.id);
+      setState(() => _error = gone
+          ? 'Esta ruta ya no está en los datos de TransMilenio. '
+              'Búscala de nuevo por su código.'
+          : 'No se pudo cargar la ruta.');
     }
   }
 
@@ -453,6 +465,11 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
     ];
   }
 
+  static String? _todaysHours(TransitRoute route) {
+    final window = route.schedule.windowFor(DateTime.now().weekday);
+    return window == null ? null : 'Hoy ${window.label}';
+  }
+
   Widget _buildBottomCard(TransitRoute route) {
     final scheme = Theme.of(context).colorScheme;
     final meters = _legMeters;
@@ -482,6 +499,16 @@ class _RouteMapScreenState extends State<RouteMapScreen> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
+          // Today's hours, because a route opened at 21:40 that stopped
+          // running at 21:03 is worth saying out loud before the rider sets
+          // an alarm on it.
+          if (_todaysHours(route) case final hours?) ...[
+            const SizedBox(height: 3),
+            Text(
+              hours,
+              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+            ),
+          ],
           const SizedBox(height: 10),
           _buildStopLine(
             icon: boardingIcon,

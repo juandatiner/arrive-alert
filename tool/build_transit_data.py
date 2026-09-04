@@ -1,13 +1,16 @@
 """Turns the 620MB TransMilenio GTFS feed into compact per-route assets.
 
-Only one trip per route is kept (the feed has exactly one shape per route, so
-every trip of a route walks the same path - the rest are just departure times),
-which is what collapses stop_times.txt from 544MB to a few hundred KB.
+Only one trip per route keeps its stops (the feed has exactly one shape per
+route, so every trip of a route walks the same path), which is what collapses
+stop_times.txt from 544MB to a few hundred KB. Every other trip is still read,
+but only for its departure time - that is what the operating hours are built
+from.
 """
-import csv, json, math, os, sys, collections
+import csv, json, math, os, shutil, sys, collections
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from shape_snap import snap_stops
+from service_days import read_calendar, windows_by_day, keep_by_day, pack
 
 csv.field_size_limit(sys.maxsize)
 GTFS = 'gtfs'
@@ -61,6 +64,10 @@ def douglas_peucker(points, tol):
 
 
 def main():
+    # Wiped rather than merged: a rebuild drops routes a same-code sibling now
+    # covers, and a leftover file for one of those ships a route the index no
+    # longer lists.
+    shutil.rmtree(f'{OUT}/routes', ignore_errors=True)
     os.makedirs(f'{OUT}/routes', exist_ok=True)
 
     routes = {}
@@ -77,15 +84,24 @@ def main():
         }
     print('routes:', len(routes))
 
-    # One representative trip per route + its shape.
+    calendar = read_calendar(csv.DictReader(open(f'{GTFS}/calendar.txt')))
+
+    # One representative trip per route + its shape. Every trip of a kept
+    # route is also remembered, because the operating hours come from all of
+    # them, not just the representative one.
     trip_for_route, shape_for_route = {}, {}
+    trip_route, trip_service = {}, {}
     for t in csv.DictReader(open(f'{GTFS}/trips.txt')):
         rid = t['route_id']
-        if rid in routes and rid not in trip_for_route:
+        if rid not in routes:
+            continue
+        trip_route[t['trip_id']] = rid
+        trip_service[t['trip_id']] = t['service_id']
+        if rid not in trip_for_route:
             trip_for_route[rid] = t['trip_id']
             shape_for_route[rid] = t['shape_id']
     wanted_trips = {tid: rid for rid, tid in trip_for_route.items()}
-    print('representative trips:', len(wanted_trips))
+    print('trips:', len(trip_route), 'representative:', len(wanted_trips))
 
     stops = {}
     for s in csv.DictReader(open(f'{GTFS}/stops.txt')):
@@ -96,19 +112,41 @@ def main():
         )
     print('stops:', len(stops))
 
-    # Single streaming pass over the 544MB stop_times.
+    # Single streaming pass over the 544MB stop_times: the representative
+    # trips give up their stop order, and every trip gives up the earliest
+    # departure on it, which is when that trip leaves its first stop.
     seq_by_route = collections.defaultdict(list)
+    trip_start = {}
     scanned = 0
     with open(f'{GTFS}/stop_times.txt', newline='') as fh:
-        for row in csv.DictReader(fh):
+        reader = csv.reader(fh)
+        header = next(reader)
+        i_trip = header.index('trip_id')
+        i_departure = header.index('departure_time')
+        i_stop = header.index('stop_id')
+        i_seq = header.index('stop_sequence')
+        for row in reader:
             scanned += 1
-            rid = wanted_trips.get(row['trip_id'])
-            if rid is None:
+            tid = row[i_trip]
+            if tid not in trip_route:
                 continue
-            seq_by_route[rid].append(
-                (int(row['stop_sequence']), row['stop_id'])
-            )
+            # Times are zero-padded, so the earliest string is the earliest
+            # departure - including the past-midnight "25:10:00" ones.
+            departure = row[i_departure]
+            current = trip_start.get(tid)
+            if current is None or departure < current:
+                trip_start[tid] = departure
+            rid = wanted_trips.get(tid)
+            if rid is not None:
+                seq_by_route[rid].append((int(row[i_seq]), row[i_stop]))
     print('stop_times scanned:', scanned, 'routes with stops:', len(seq_by_route))
+
+    spans = windows_by_day(trip_route, trip_service, trip_start, calendar)
+    short_name_of = {rid: meta['short'] for rid, meta in routes.items()}
+    kept_days = keep_by_day(spans, short_name_of)
+    dropped = sum(1 for rid in routes if rid not in kept_days)
+    print('route/day windows:', len(spans),
+          '| routes a same-code rival covers entirely:', dropped)
 
     # Shapes, also single pass.
     wanted_shapes = {sid: rid for rid, sid in shape_for_route.items()}
@@ -145,8 +183,10 @@ def main():
         raw_pts += len(pts)
         pts = douglas_peucker(pts, SIMPLIFY_TOL)
         simp_pts += len(pts)
-        if not stop_list or not pts:
+        days = kept_days.get(rid)
+        if not stop_list or not pts or not days:
             continue
+        day_mask, hours = pack(days, spans, rid)
 
         shape = [(round(la, 5), round(lo, 5)) for la, lo in pts]
         # Precomputed so the app never has to guess where a stop sits on the
@@ -164,6 +204,8 @@ def main():
                 'stops': stop_list,
                 'si': stop_vertices,
                 'sm': stop_meters,
+                'd': day_mask,
+                'h': hours,
             },
             open(f'{OUT}/routes/{rid}.json', 'w'),
             separators=(',', ':'),
@@ -176,6 +218,8 @@ def main():
             'k': meta['kind'],
             'c': meta['color'],
             'n': len(stop_list),
+            'd': day_mask,
+            'h': hours,
         })
 
     json.dump(index, open(f'{OUT}/routes_index.json', 'w'),
